@@ -2,8 +2,7 @@
 
 # Dogma Browser
 
-A web-based UI for browsing the structure of and interaction between Dogma
-application.
+A web-based UI for discovering and inspecting Dogma applications.
 
 [![Documentation](https://img.shields.io/badge/go.dev-documentation-007d9c?&style=for-the-badge)](https://pkg.go.dev/github.com/dogmatiq/browser)
 [![Latest Version](https://img.shields.io/github/tag/dogmatiq/browser.svg?&style=for-the-badge&label=semver)](https://github.com/dogmatiq/browser/releases)
@@ -12,6 +11,6 @@ application.
 
 </div>
 
-The browser performs static analysis on a set of repositories and produces
-web-based documentation describing the applications, messages handlers and their
+The browser performs static analysis of Go modules to produce web-based
+documentation describing the Dogma applications, messages, handlers and their
 relationships.

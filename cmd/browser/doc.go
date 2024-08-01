@@ -1,2 +1,2 @@
-// Package main is the entry-point for the browser application.
+// Package main is the entry-point for the browser service.
 package main
