@@ -6,8 +6,9 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net/http"
 
-	"github.com/dogmatiq/browser/integration/github"
+	"github.com/dogmatiq/browser/components/github"
 	"github.com/dogmatiq/browser/internal/githubutils"
 	"github.com/dogmatiq/ferrite"
 	"github.com/dogmatiq/imbue"
@@ -37,24 +38,47 @@ var (
 				WithSensitiveContent().
 				Required()
 
-	// githubAppHookSecret = ferrite.
-	// 			String("GITHUB_APP_HOOK_SECRET", "the secret used to verify GitHub web-hook requests are genuine").
-	// 			WithSensitiveContent().
-	// 			Required()
+	githubAppHookSecret = ferrite.
+				String("GITHUB_APP_HOOK_SECRET", "the secret used to verify GitHub web-hook requests are genuine").
+				WithSensitiveContent().
+				Required()
 )
 
 func init() {
-	imbue.With2(
+	imbue.With1(
 		container,
 		func(
 			ctx imbue.Context,
 			clients *githubutils.ClientSet,
-			logger *slog.Logger,
-		) (*github.Watcher, error) {
-			return &github.Watcher{
+		) (*github.RepositoryWatcher, error) {
+			return &github.RepositoryWatcher{
 				Clients: clients,
-				Logger:  logger,
 			}, nil
+		},
+	)
+
+	imbue.With1(
+		container,
+		func(
+			ctx imbue.Context,
+			logger *slog.Logger,
+		) (*github.WebHookHandler, error) {
+			return &github.WebHookHandler{
+				Secret: githubAppHookSecret.Value(),
+				Logger: logger,
+			}, nil
+		},
+	)
+
+	imbue.Decorate1(
+		container,
+		func(
+			ctx imbue.Context,
+			mux *http.ServeMux,
+			h *github.WebHookHandler,
+		) (*http.ServeMux, error) {
+			mux.Handle("/github/hook", h)
+			return mux, nil
 		},
 	)
 

@@ -3,14 +3,20 @@ package main
 import (
 	"context"
 	"fmt"
+	"log/slog"
+	"net"
+	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
-	"github.com/dogmatiq/browser/integration/github"
+	"github.com/dogmatiq/browser/components/github"
+	"github.com/dogmatiq/browser/components/messagelogger"
 	"github.com/dogmatiq/ferrite"
 	"github.com/dogmatiq/imbue"
 	"github.com/dogmatiq/minibus"
+	"golang.org/x/sync/errgroup"
 )
 
 var (
@@ -38,17 +44,62 @@ func run() error {
 	)
 	defer cancel()
 
-	return imbue.Invoke1(
-		ctx,
-		container,
+	g := container.WaitGroup(ctx)
+
+	imbue.Go3(
+		g,
 		func(
 			ctx context.Context,
-			gh *github.Watcher,
+			w *github.RepositoryWatcher,
+			h *github.WebHookHandler,
+			logger *slog.Logger,
 		) error {
 			return minibus.Run(
 				ctx,
-				minibus.WithFunc(gh.Run),
+				minibus.WithFunc(w.Run),
+				minibus.WithFunc(h.Run),
+				minibus.WithFunc(func(ctx context.Context) error {
+					return messagelogger.Run(ctx, logger)
+				}),
 			)
 		},
 	)
+
+	imbue.Go2(
+		g,
+		func(
+			ctx context.Context,
+			server *http.Server,
+			logger *slog.Logger,
+		) error {
+			g, ctx := errgroup.WithContext(ctx)
+
+			server.BaseContext = func(l net.Listener) context.Context {
+				logger.InfoContext(
+					ctx,
+					"listening for HTTP requests",
+					slog.String("listen_address", l.Addr().String()),
+				)
+				return ctx
+			}
+
+			g.Go(func() error {
+				<-ctx.Done()
+
+				shutdownCtx := context.WithoutCancel(ctx)
+				shutdownCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+				defer cancel()
+
+				return server.Shutdown(shutdownCtx)
+			})
+
+			g.Go(func() error {
+				return server.ListenAndServe()
+			})
+
+			return g.Wait()
+		},
+	)
+
+	return g.Wait()
 }
