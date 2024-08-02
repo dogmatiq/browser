@@ -3,11 +3,16 @@ package github
 import (
 	"context"
 	"fmt"
+	"os"
+	"path/filepath"
 
 	"github.com/dogmatiq/browser/internal/githubutils"
 	"github.com/dogmatiq/browser/messages"
 	"github.com/dogmatiq/minibus"
 	"github.com/google/go-github/v63/github"
+	"golang.org/x/mod/modfile"
+	"golang.org/x/mod/semver"
+	"golang.org/x/sync/errgroup"
 )
 
 // RepositoryWatcher publishes messages about the repositories that are
@@ -114,19 +119,130 @@ func (w *RepositoryWatcher) addInstallation(ctx context.Context, in *github.Inst
 
 func (w *RepositoryWatcher) foundRepos(
 	ctx context.Context,
-	_ *github.Client,
+	c *github.Client,
 	repos ...*github.Repository,
 ) error {
+	g, ctx := errgroup.WithContext(ctx)
+
 	for _, r := range repos {
-		return minibus.Send(
-			ctx,
-			&messages.RepoFound{
-				Source: "github",
-				Name:   r.GetFullName(),
-			})
+		g.Go(func() error {
+			return w.foundRepo(ctx, c, r)
+		})
 	}
 
-	return nil
+	return g.Wait()
+}
+
+func (*RepositoryWatcher) foundRepo(
+	ctx context.Context,
+	c *github.Client,
+	r *github.Repository,
+) error {
+	if err := minibus.Send(
+		ctx,
+		messages.RepoFound{
+			RepoSource: "github",
+			RepoName:   r.GetFullName(),
+		},
+	); err != nil {
+		return err
+	}
+
+	var version string
+
+	if err := githubutils.Range(
+		ctx,
+		func(ctx context.Context, opts *github.ListOptions) ([]*github.RepositoryTag, *github.Response, error) {
+			return c.Repositories.ListTags(ctx, r.GetOwner().GetLogin(), r.GetName(), opts)
+		},
+		func(ctx context.Context, t *github.RepositoryTag) error {
+			v := semver.Canonical(t.GetName())
+			if v == "" {
+				return nil // invalid
+			}
+
+			if version == "" || semver.Compare(v, version) > 0 {
+				version = v
+			}
+
+			return nil
+		},
+	); err != nil {
+		return err
+	}
+
+	if version == "" {
+		// TODO: analyze default branch
+		return nil
+	}
+
+	u, _, err := c.Repositories.GetArchiveLink(
+		ctx,
+		r.GetOwner().GetLogin(),
+		r.GetName(),
+		github.Tarball,
+		&github.RepositoryContentGetOptions{
+			Ref: version,
+		},
+		1,
+	)
+	if err != nil {
+		return err
+	}
+
+	dir, err := os.MkdirTemp("", "")
+	if err != nil {
+		return err
+	}
+	defer os.RemoveAll(dir)
+
+	if err := githubutils.DownloadArchive(
+		ctx,
+		c.Client(),
+		u,
+		dir,
+	); err != nil {
+		return err
+	}
+
+	return filepath.WalkDir(
+		dir,
+		func(path string, info os.DirEntry, err error) error {
+			if err != nil {
+				return err
+			}
+
+			if info.IsDir() {
+				return nil
+			}
+
+			if filepath.Base(path) != "go.mod" {
+				return nil
+			}
+
+			content, err := os.ReadFile(path)
+			if err != nil {
+				return err
+			}
+
+			mod, err := modfile.Parse(
+				path,
+				content,
+				nil, // version fixer
+			)
+			if err != nil {
+				return err
+			}
+
+			return minibus.Send(
+				ctx,
+				messages.GoModuleFound{
+					ModulePath:    mod.Module.Mod.Path,
+					ModuleVersion: version,
+				},
+			)
+		},
+	)
 }
 
 func (w *RepositoryWatcher) lostRepos(
@@ -135,12 +251,15 @@ func (w *RepositoryWatcher) lostRepos(
 	repos ...*github.Repository,
 ) error {
 	for _, r := range repos {
-		return minibus.Send(
+		if err := minibus.Send(
 			ctx,
-			&messages.RepoLost{
-				Source: "github",
-				Name:   r.GetFullName(),
-			})
+			messages.RepoLost{
+				RepoSource: "github",
+				RepoName:   r.GetFullName(),
+			},
+		); err != nil {
+			return err
+		}
 	}
 
 	return nil

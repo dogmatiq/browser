@@ -11,6 +11,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/dogmatiq/browser/components/analyzer"
 	"github.com/dogmatiq/browser/components/github"
 	"github.com/dogmatiq/browser/components/messagelogger"
 	"github.com/dogmatiq/ferrite"
@@ -46,16 +47,18 @@ func run() error {
 
 	g := container.WaitGroup(ctx)
 
-	imbue.Go3(
+	imbue.Go4(
 		g,
 		func(
 			ctx context.Context,
+			a *analyzer.Analyzer,
 			w *github.RepositoryWatcher,
 			h *github.WebHookHandler,
 			logger *slog.Logger,
 		) error {
 			return minibus.Run(
 				ctx,
+				minibus.WithFunc(a.Run),
 				minibus.WithFunc(w.Run),
 				minibus.WithFunc(h.Run),
 				minibus.WithFunc(func(ctx context.Context) error {
