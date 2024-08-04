@@ -3,11 +3,11 @@ module github.com/dogmatiq/browser
 go 1.22
 
 require (
-	github.com/dogmatiq/dapper v0.5.3
 	github.com/dogmatiq/ferrite v1.3.0
 	github.com/dogmatiq/imbue v0.7.1
 	github.com/dogmatiq/minibus v0.2.1
 	github.com/google/go-github/v63 v63.0.0
+	github.com/google/uuid v1.6.0
 	github.com/lestrrat-go/jwx/v2 v2.1.1
 	golang.org/x/mod v0.19.0
 	golang.org/x/oauth2 v0.21.0
@@ -17,7 +17,6 @@ require (
 require (
 	github.com/decred/dcrd/dcrec/secp256k1/v4 v4.3.0 // indirect
 	github.com/dogmatiq/iago v0.4.0 // indirect
-	github.com/dogmatiq/jumble v0.1.0 // indirect
 	github.com/goccy/go-json v0.10.3 // indirect
 	github.com/google/go-querystring v1.1.0 // indirect
 	github.com/kr/text v0.2.0 // indirect
@@ -37,6 +36,5 @@ require (
 	golang.org/x/net v0.27.0 // indirect
 	golang.org/x/sys v0.22.0 // indirect
 	golang.org/x/tools v0.23.0 // indirect
-	google.golang.org/protobuf v1.33.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )

@@ -25,6 +25,7 @@ type RepositoryWatcher struct {
 func (w *RepositoryWatcher) Run(ctx context.Context) error {
 	minibus.Subscribe[*github.InstallationEvent](ctx)
 	minibus.Subscribe[*github.InstallationRepositoriesEvent](ctx)
+	minibus.Subscribe[*github.RepositoryEvent](ctx)
 	minibus.Ready(ctx)
 
 	if err := githubutils.Range(
@@ -53,6 +54,8 @@ func (w *RepositoryWatcher) handleMessage(
 		return w.handleInstallationEvent(ctx, m)
 	case *github.InstallationRepositoriesEvent:
 		return w.handleInstallationRepositoriesEvent(ctx, m)
+	case *github.RepositoryEvent:
+		return w.handleRepositoryEvent(ctx, m)
 	default:
 		panic("unexpected message type")
 	}
@@ -86,6 +89,22 @@ func (w *RepositoryWatcher) handleInstallationRepositoriesEvent(
 
 	if err := w.foundRepos(ctx, c, m.RepositoriesAdded...); err != nil {
 		return err
+	}
+
+	return nil
+}
+
+func (w *RepositoryWatcher) handleRepositoryEvent(
+	ctx context.Context,
+	m *github.RepositoryEvent,
+) error {
+	c := w.Clients.Installation(m.Installation.GetID())
+
+	switch m.GetAction() {
+	case "archived":
+		return w.lostRepos(ctx, c, m.Repo)
+	case "unarchived":
+		return w.foundRepos(ctx, c, m.Repo)
 	}
 
 	return nil
@@ -138,9 +157,14 @@ func (*RepositoryWatcher) foundRepo(
 	c *github.Client,
 	r *github.Repository,
 ) error {
+	if isIgnored(r) {
+		return nil
+	}
+
 	if err := minibus.Send(
 		ctx,
 		messages.RepoFound{
+			RepoID:     repoID(r),
 			RepoSource: "github",
 			RepoName:   r.GetFullName(),
 		},
@@ -237,8 +261,7 @@ func (*RepositoryWatcher) foundRepo(
 			return minibus.Send(
 				ctx,
 				messages.GoModuleFound{
-					RepoSource:    "github",
-					RepoName:      r.GetFullName(),
+					RepoID:        repoID(r),
 					ModulePath:    mod.Module.Mod.Path,
 					ModuleVersion: version,
 				},
@@ -256,8 +279,7 @@ func (w *RepositoryWatcher) lostRepos(
 		if err := minibus.Send(
 			ctx,
 			messages.RepoLost{
-				RepoSource: "github",
-				RepoName:   r.GetFullName(),
+				RepoID: repoID(r),
 			},
 		); err != nil {
 			return err
