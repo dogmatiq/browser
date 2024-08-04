@@ -40,6 +40,8 @@ func (m RepoLost) LogTo(ctx context.Context, logger *slog.Logger) {
 
 // GoModuleFound is a message that indicates a Go module has been found.
 type GoModuleFound struct {
+	RepoSource    string
+	RepoName      string
 	ModulePath    string
 	ModuleVersion string
 }
@@ -49,6 +51,8 @@ func (m GoModuleFound) LogTo(ctx context.Context, logger *slog.Logger) {
 	logger.InfoContext(
 		ctx,
 		"go module found",
+		slog.String("repo_source", m.RepoSource),
+		slog.String("repo_name", m.RepoName),
 		slog.String("module_path", m.ModulePath),
 		slog.String("module_version", m.ModuleVersion),
 	)

@@ -237,6 +237,8 @@ func (*RepositoryWatcher) foundRepo(
 			return minibus.Send(
 				ctx,
 				messages.GoModuleFound{
+					RepoSource:    "github",
+					RepoName:      r.GetFullName(),
 					ModulePath:    mod.Module.Mod.Path,
 					ModuleVersion: version,
 				},

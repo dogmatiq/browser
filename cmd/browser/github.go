@@ -12,6 +12,7 @@ import (
 	"github.com/dogmatiq/browser/internal/githubutils"
 	"github.com/dogmatiq/ferrite"
 	"github.com/dogmatiq/imbue"
+	"github.com/dogmatiq/minibus"
 )
 
 var (
@@ -57,6 +58,20 @@ func init() {
 		},
 	)
 
+	imbue.Decorate1(
+		container,
+		func(
+			ctx imbue.Context,
+			options []minibus.Option,
+			w *github.RepositoryWatcher,
+		) ([]minibus.Option, error) {
+			return append(
+				options,
+				minibus.WithFunc(w.Run),
+			), nil
+		},
+	)
+
 	imbue.With1(
 		container,
 		func(
@@ -67,6 +82,20 @@ func init() {
 				Secret: githubAppHookSecret.Value(),
 				Logger: logger,
 			}, nil
+		},
+	)
+
+	imbue.Decorate1(
+		container,
+		func(
+			ctx imbue.Context,
+			options []minibus.Option,
+			h *github.WebHookHandler,
+		) ([]minibus.Option, error) {
+			return append(
+				options,
+				minibus.WithFunc(h.Run),
+			), nil
 		},
 	)
 

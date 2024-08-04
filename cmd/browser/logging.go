@@ -1,11 +1,14 @@
 package main
 
 import (
+	"context"
 	"log/slog"
 	"os"
 
+	"github.com/dogmatiq/browser/components/messagelogger"
 	"github.com/dogmatiq/ferrite"
 	"github.com/dogmatiq/imbue"
+	"github.com/dogmatiq/minibus"
 )
 
 var (
@@ -31,6 +34,24 @@ func init() {
 					os.Stderr,
 					&slog.HandlerOptions{
 						Level: level,
+					},
+				),
+			), nil
+		},
+	)
+
+	imbue.Decorate1(
+		container,
+		func(
+			ctx imbue.Context,
+			options []minibus.Option,
+			logger *slog.Logger,
+		) ([]minibus.Option, error) {
+			return append(
+				options,
+				minibus.WithFunc(
+					func(ctx context.Context) error {
+						return messagelogger.Run(ctx, logger)
 					},
 				),
 			), nil
