@@ -27,7 +27,12 @@ func (a *Analyzer) Run(ctx context.Context) error {
 	g, ctx := errgroup.WithContext(ctx)
 	for n := range workers {
 		g.Go(func() error {
-			return a.runWorker(ctx, n+1)
+			w := &worker{
+				Logger: a.Logger.With(
+					slog.Int("worker_id", n+1),
+				),
+			}
+			return w.Run(ctx)
 		})
 	}
 
@@ -38,21 +43,4 @@ func (a *Analyzer) Run(ctx context.Context) error {
 	)
 
 	return g.Wait()
-}
-
-func (a *Analyzer) runWorker(ctx context.Context, id int) error {
-	for m := range minibus.Inbox(ctx) {
-		switch m := m.(type) {
-		case messages.GoModuleFound:
-			a.Logger.InfoContext(
-				ctx,
-				"analyzing go module",
-				slog.Int("worker_id", id),
-				slog.String("module_path", m.ModulePath),
-				slog.String("module_version", m.ModuleVersion),
-			)
-		}
-	}
-
-	return ctx.Err()
 }

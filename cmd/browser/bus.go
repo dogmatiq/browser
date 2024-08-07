@@ -9,7 +9,9 @@ func init() {
 	imbue.With0(
 		container,
 		func(ctx imbue.Context) ([]minibus.Option, error) {
-			return nil, nil
+			return []minibus.Option{
+				minibus.WithInboxSize(10000),
+			}, nil
 		},
 	)
 }

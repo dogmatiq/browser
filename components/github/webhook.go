@@ -21,7 +21,7 @@ type WebHookHandler struct {
 }
 
 // Run pipes events received by the webhook handler to the message bus.
-func (h *WebHookHandler) Run(ctx context.Context) error {
+func (h *WebHookHandler) Run(ctx context.Context) (err error) {
 	h.init.Do(func() {
 		h.events = make(chan any)
 	})

@@ -16,6 +16,26 @@ func Range[T any](
 	req func(context.Context, *github.ListOptions) ([]T, *github.Response, error),
 	fn func(context.Context, T) error,
 ) error {
+	return RangePages(
+		ctx,
+		req,
+		func(ctx context.Context, items []T) error {
+			for _, i := range items {
+				if err := fn(ctx, i); err != nil {
+					return err
+				}
+			}
+			return nil
+		},
+	)
+}
+
+// RangePages calls fn for every page returned by req.
+func RangePages[T any](
+	ctx context.Context,
+	req func(context.Context, *github.ListOptions) ([]T, *github.Response, error),
+	fn func(context.Context, []T) error,
+) error {
 	opts := &github.ListOptions{
 		Page: 1,
 	}
@@ -26,14 +46,13 @@ func Range[T any](
 			return err
 		}
 
-		for _, i := range items {
-			switch fn(ctx, i) {
-			case nil:
-			case ErrBreak:
-				return nil
-			default:
-				return err
-			}
+		switch err := fn(ctx, items); err {
+		case nil:
+			// continue
+		case ErrBreak:
+			return nil
+		default:
+			return err
 		}
 
 		opts.Page = res.NextPage

@@ -5,7 +5,6 @@ import (
 	"crypto/rsa"
 	"fmt"
 	"net/url"
-	"strconv"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -19,7 +18,7 @@ import (
 // ClientSet provides [github.Client] instances for a GitHub application and
 // specific installations of that application.
 type ClientSet struct {
-	AppID      int64
+	ClientID   string
 	PrivateKey *rsa.PrivateKey
 	BaseURL    *url.URL
 
@@ -28,50 +27,80 @@ type ClientSet struct {
 }
 
 // App returns a client that is scoped to the GitHub application itself.
-func (f *ClientSet) App() *github.Client {
-	c := f.appClient.Load()
+func (s *ClientSet) App() *github.Client {
+	c := s.appClient.Load()
 
 	if c == nil {
 		c = github.NewClient(oauth2.NewClient(
 			context.Background(),
-			&appTokenSource{
-				AppID:      f.AppID,
-				PrivateKey: f.PrivateKey,
-			},
+			&appTokenSource{s},
 		))
 
-		if f.BaseURL != nil {
+		if s.BaseURL != nil {
 			var err error
 			c, err = c.WithEnterpriseURLs(
-				f.BaseURL.String(),
-				f.BaseURL.String(),
+				s.BaseURL.String(),
+				s.BaseURL.String(),
 			)
 			if err != nil {
 				panic(err)
 			}
 		}
 
-		if !f.appClient.CompareAndSwap(nil, c) {
-			c = f.appClient.Load()
+		if !s.appClient.CompareAndSwap(nil, c) {
+			c = s.appClient.Load()
 		}
 	}
 
 	return c
 }
 
+// GenerateToken generates a new GitHub API token that authenticates as the
+// GitHub application.
+func (s *ClientSet) GenerateToken() (*oauth2.Token, error) {
+	expiresAt := time.Now().Add(1 * time.Minute)
+
+	token, err := jwt.
+		NewBuilder().
+		Issuer(s.ClientID).
+		IssuedAt(time.Now()).
+		Expiration(expiresAt).
+		Build()
+
+	if err != nil {
+		return nil, fmt.Errorf("unable to build token claims: %w", err)
+	}
+
+	data, err := jwt.Sign(
+		token,
+		jwt.WithKey(
+			jwa.RS256,
+			s.PrivateKey,
+		),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("unable to sign token: %w", err)
+	}
+
+	return &oauth2.Token{
+		AccessToken: string(data),
+		Expiry:      expiresAt,
+	}, nil
+}
+
 // Installation returns a client that is scoped to the installation with the
 // given ID.
-func (f *ClientSet) Installation(id int64) *github.Client {
-	client, ok := f.instClients.Load(id)
+func (s *ClientSet) Installation(id int64) *github.Client {
+	client, ok := s.instClients.Load(id)
 
 	if !ok {
-		client, _ = f.instClients.LoadOrStore(
+		client, _ = s.instClients.LoadOrStore(
 			id,
 			github.NewClient(
 				oauth2.NewClient(
 					context.Background(),
 					&installationTokenSource{
-						AppClient:      f.App(),
+						AppClient:      s.App(),
 						InstallationID: id,
 					},
 				),
@@ -112,41 +141,10 @@ func (s *installationTokenSource) Token() (*oauth2.Token, error) {
 // appTokenSource is an implementation of oauth2.AppTokenSource that generates
 // GitHub API tokens that authenticate as a GitHub application.
 type appTokenSource struct {
-	// AppID is the GitHub application ID.
-	AppID int64
-
-	// PrivateKey is the application's private key.
-	PrivateKey *rsa.PrivateKey
+	ClientSet *ClientSet
 }
 
 // Token returns an OAuth token that authenticates as the GitHub application.
 func (s *appTokenSource) Token() (*oauth2.Token, error) {
-	expiresAt := time.Now().Add(1 * time.Minute)
-
-	token, err := jwt.
-		NewBuilder().
-		Issuer(strconv.FormatInt(s.AppID, 10)).
-		IssuedAt(time.Now()).
-		Expiration(expiresAt).
-		Build()
-
-	if err != nil {
-		return nil, fmt.Errorf("unable to build GitHub client token: %w", err)
-	}
-
-	data, err := jwt.Sign(
-		token,
-		jwt.WithKey(
-			jwa.RS256,
-			s.PrivateKey,
-		),
-	)
-	if err != nil {
-		return nil, fmt.Errorf("unable to sign GitHub client token: %w", err)
-	}
-
-	return &oauth2.Token{
-		AccessToken: string(data),
-		Expiry:      expiresAt,
-	}, nil
+	return s.ClientSet.GenerateToken()
 }

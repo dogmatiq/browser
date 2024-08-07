@@ -7,8 +7,8 @@ import (
 	"github.com/google/uuid"
 )
 
-// repoID returns a unique identifier for the repository.
-func repoID(r *github.Repository) uuid.UUID {
+// generateRepoID returns a unique identifier for the repository.
+func generateRepoID(r *github.Repository) uuid.UUID {
 	id := strconv.FormatInt(r.GetID(), 10)
 	return uuid.NewSHA1(repoIDNamespace, []byte(id))
 }

@@ -2,6 +2,7 @@ package main
 
 import (
 	"log/slog"
+	"runtime"
 
 	"github.com/dogmatiq/browser/components/analyzer"
 	"github.com/dogmatiq/ferrite"
@@ -13,7 +14,7 @@ var (
 	workerCount = ferrite.
 		Signed[int]("WORKER_COUNT", "number of concurrent analysis workers").
 		WithMinimum(1).
-		WithDefault(1).
+		WithDefault(runtime.NumCPU()).
 		Required()
 )
 

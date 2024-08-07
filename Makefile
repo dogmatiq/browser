@@ -10,8 +10,8 @@ GO_FERRITE_BINARY = browser
 -include .makefiles/pkg/docker/v1/Makefile
 
 .PHONY: run
-run: $(GO_DEBUG_DIR)/browser
-	DEBUG=true $<
+run: $(GO_DEBUG_DIR)/browser $(GO_DEBUG_DIR)/askpass
+	GIT_ASKPASS=$(PWD)/$(GO_DEBUG_DIR)/askpass $<
 
 .makefiles/%:
 	@curl -sfL https://makefiles.dev/v1 | bash /dev/stdin "$@"

@@ -14,7 +14,6 @@ import (
 	"github.com/dogmatiq/ferrite"
 	"github.com/dogmatiq/imbue"
 	"github.com/dogmatiq/minibus"
-	"golang.org/x/sync/errgroup"
 )
 
 var (
@@ -61,8 +60,6 @@ func run() error {
 			server *http.Server,
 			logger *slog.Logger,
 		) error {
-			g, ctx := errgroup.WithContext(ctx)
-
 			server.BaseContext = func(l net.Listener) context.Context {
 				logger.InfoContext(
 					ctx,
@@ -72,21 +69,17 @@ func run() error {
 				return ctx
 			}
 
-			g.Go(func() error {
+			go func() {
 				<-ctx.Done()
 
 				shutdownCtx := context.WithoutCancel(ctx)
 				shutdownCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
 				defer cancel()
 
-				return server.Shutdown(shutdownCtx)
-			})
+				server.Shutdown(shutdownCtx)
+			}()
 
-			g.Go(func() error {
-				return server.ListenAndServe()
-			})
-
-			return g.Wait()
+			return server.ListenAndServe()
 		},
 	)
 

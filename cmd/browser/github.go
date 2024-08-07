@@ -20,14 +20,9 @@ var (
 			URL("GITHUB_URL", "the base URL of the GitHub API").
 			Optional()
 
-	githubAppID = ferrite.
-			Signed[int64]("GITHUB_APP_ID", "the ID of the GitHub application used to read repository content").
-			WithMinimum(1).
-			Required()
-
-	// githubAppClientID = ferrite.
-	// 			String("GITHUB_APP_CLIENT_ID", "the client ID of the GitHub application used to read repository content").
-	// 			Required()
+	githubAppClientID = ferrite.
+				String("GITHUB_APP_CLIENT_ID", "the client ID of the GitHub application used to read repository content").
+				Required()
 
 	// githubAppClientSecret = ferrite.
 	// 			String("GITHUB_APP_CLIENT_SECRET", "the client secret for the GitHub application used to read repository content").
@@ -51,24 +46,24 @@ func init() {
 		func(
 			ctx imbue.Context,
 			clients *githubutils.ClientSet,
-		) (*github.RepositoryWatcher, error) {
-			return &github.RepositoryWatcher{
+		) (*github.CredentialServer, error) {
+			return &github.CredentialServer{
 				Clients: clients,
 			}, nil
 		},
 	)
 
-	imbue.Decorate1(
+	imbue.With2(
 		container,
 		func(
 			ctx imbue.Context,
-			options []minibus.Option,
-			w *github.RepositoryWatcher,
-		) ([]minibus.Option, error) {
-			return append(
-				options,
-				minibus.WithFunc(w.Run),
-			), nil
+			clients *githubutils.ClientSet,
+			logger *slog.Logger,
+		) (*github.RepositoryWatcher, error) {
+			return &github.RepositoryWatcher{
+				Clients: clients,
+				Logger:  logger,
+			}, nil
 		},
 	)
 
@@ -85,15 +80,19 @@ func init() {
 		},
 	)
 
-	imbue.Decorate1(
+	imbue.Decorate3(
 		container,
 		func(
 			ctx imbue.Context,
 			options []minibus.Option,
+			s *github.CredentialServer,
+			w *github.RepositoryWatcher,
 			h *github.WebHookHandler,
 		) ([]minibus.Option, error) {
 			return append(
 				options,
+				minibus.WithFunc(s.Run),
+				minibus.WithFunc(w.Run),
 				minibus.WithFunc(h.Run),
 			), nil
 		},
@@ -135,7 +134,7 @@ func init() {
 			baseURL, _ := githubURL.Value()
 
 			return &githubutils.ClientSet{
-				AppID:      githubAppID.Value(),
+				ClientID:   githubAppClientID.Value(),
 				PrivateKey: pk,
 				BaseURL:    baseURL,
 			}, nil
