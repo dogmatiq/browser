@@ -6,18 +6,18 @@ import (
 	"net/url"
 	"regexp"
 
-	"github.com/dogmatiq/browser/internal/githubutils"
+	"github.com/dogmatiq/browser/internal/githubapi"
 	"github.com/dogmatiq/browser/messages"
 	"github.com/dogmatiq/minibus"
 	"github.com/google/go-github/v63/github"
 )
 
+// CredentialServer responds to requests for repository credentials.
 type CredentialServer struct {
-	Clients *githubutils.ClientSet
-
-	tokens map[string]*github.InstallationToken
+	Connector *githubapi.Connector
 }
 
+// Run starts the server.
 func (s *CredentialServer) Run(ctx context.Context) error {
 	minibus.Subscribe[messages.RepoCredentialsRequest](ctx)
 	minibus.Ready(ctx)
@@ -57,17 +57,10 @@ func (s *CredentialServer) Run(ctx context.Context) error {
 // shouldRespond returns true if the server should respond to a request for
 // credentials for the given repository URL.
 func (s *CredentialServer) shouldRespond(repoURL *url.URL) bool {
-	baseURL := s.Clients.App().BaseURL
-
-	if repoURL.Host == "github.com" && baseURL.Host == "api.github.com" {
-		return true
+	if s.Connector.BaseURL == nil {
+		return repoURL.Host == "github.com"
 	}
-
-	if repoURL.Host == baseURL.Host {
-		return true
-	}
-
-	return false
+	return repoURL.Host == s.Connector.BaseURL.Host
 }
 
 func (s *CredentialServer) getToken(
@@ -79,30 +72,36 @@ func (s *CredentialServer) getToken(
 		FindStringSubmatch(repoURL.Path)
 
 	if matches == nil {
-		return "", fmt.Errorf("github: invalid repository URL: %s", repoURL)
+		return "", fmt.Errorf("invalid repository URL: %s", repoURL)
 	}
 
 	owner := matches[1]
 	repo := matches[2]
 
-	in, _, err := s.Clients.App().Apps.FindRepositoryInstallation(ctx, owner, repo)
-	if err != nil {
-		return "", fmt.Errorf("github: unable to find installation for %s/%s repository: %w", owner, repo, err)
-	}
-
-	token, _, err := s.Clients.App().Apps.CreateInstallationToken(
+	return githubapi.WithApp(
 		ctx,
-		in.GetID(),
-		&github.InstallationTokenOptions{
-			// 	// Repositories: []string{repo},
-			Permissions: &github.InstallationPermissions{
-				Contents: github.String("read"),
-			},
+		s.Connector,
+		func(ctx context.Context, c *githubapi.AppClient) (string, error) {
+			in, _, err := c.REST.Apps.FindRepositoryInstallation(ctx, owner, repo)
+			if err != nil {
+				return "", fmt.Errorf("unable to find installation for %s/%s repository: %w", owner, repo, err)
+			}
+
+			token, _, err := c.REST.Apps.CreateInstallationToken(
+				ctx,
+				in.GetID(),
+				&github.InstallationTokenOptions{
+					Repositories: []string{repo},
+					Permissions: &github.InstallationPermissions{
+						Contents: github.String("read"),
+					},
+				},
+			)
+			if err != nil {
+				return "", fmt.Errorf("unable to create installation token for %s/%s repository: %w", owner, repo, err)
+			}
+
+			return token.GetToken(), nil
 		},
 	)
-	if err != nil {
-		return "", fmt.Errorf("github: unable to create installation token for %s/%s repository: %w", owner, repo, err)
-	}
-
-	return token.GetToken(), nil
 }

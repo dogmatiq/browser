@@ -9,9 +9,8 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
-	"time"
 
-	"github.com/dogmatiq/browser/internal/githubutils"
+	"github.com/dogmatiq/browser/internal/githubapi"
 	"github.com/dogmatiq/browser/messages"
 	"github.com/dogmatiq/minibus"
 	"github.com/go-git/go-git/v5"
@@ -24,8 +23,8 @@ import (
 // RepositoryWatcher publishes messages about the repositories that are
 // accessible to the GitHub application.
 type RepositoryWatcher struct {
-	Clients *githubutils.ClientSet
-	Logger  *slog.Logger
+	Connector *githubapi.Connector
+	Logger    *slog.Logger
 }
 
 // Run starts the watcher.
@@ -35,12 +34,17 @@ func (w *RepositoryWatcher) Run(ctx context.Context) (err error) {
 	minibus.Subscribe[*github.RepositoryEvent](ctx)
 	minibus.Ready(ctx)
 
-	if err := githubutils.Range(
+	if err := w.Connector.WithApp(
 		ctx,
-		w.Clients.App().Apps.ListInstallations,
-		w.addInstallation,
+		func(ctx context.Context, c *githubapi.AppClient) error {
+			return githubapi.Range(
+				ctx,
+				c.REST.Apps.ListInstallations,
+				w.addInstallation,
+			)
+		},
 	); err != nil {
-		return fmt.Errorf("github: unable to list installations: %w", err)
+		return err
 	}
 
 	for m := range minibus.Inbox(ctx) {
@@ -111,27 +115,32 @@ func (w *RepositoryWatcher) handleRepositoryEvent(
 	}
 }
 
-func (w *RepositoryWatcher) addInstallation(ctx context.Context, in *github.Installation) (err error) {
-	c := w.Clients.Installation(in.GetID())
-
-	if err := githubutils.RangePages(
+func (w *RepositoryWatcher) addInstallation(ctx context.Context, in *github.Installation) error {
+	if err := w.Connector.WithInstallation(
 		ctx,
-		func(ctx context.Context, opts *github.ListOptions) ([]*github.Repository, *github.Response, error) {
-			repos, res, err := c.Apps.ListRepos(ctx, opts)
-			if err != nil {
-				return nil, res, err
-			}
-			return repos.Repositories, res, nil
+		in.GetID(),
+		&github.InstallationTokenOptions{
+			Permissions: &github.InstallationPermissions{
+				Metadata: github.String("read"),
+			},
 		},
-		func(ctx context.Context, repos []*github.Repository) error {
-			return w.foundRepos(ctx, in, repos...)
+		func(ctx context.Context, c *githubapi.InstallationClient) error {
+			return githubapi.RangePages(
+				ctx,
+				func(ctx context.Context, opts *github.ListOptions) ([]*github.Repository, *github.Response, error) {
+					repos, res, err := c.REST.Apps.ListRepos(ctx, opts)
+					if err != nil {
+						return nil, res, err
+					}
+					return repos.Repositories, res, nil
+				},
+				func(ctx context.Context, repos []*github.Repository) error {
+					return w.foundRepos(ctx, in, repos...)
+				},
+			)
 		},
 	); err != nil {
-		return fmt.Errorf(
-			"github: unable to list repositories for %q installation: %w",
-			in.GetAccount().GetLogin(),
-			err,
-		)
+		return fmt.Errorf("unable to add %q installation: %w", in.GetAccount().GetLogin(), err)
 	}
 
 	return nil
@@ -142,68 +151,55 @@ func (w *RepositoryWatcher) foundRepos(
 	in *github.Installation,
 	repos ...*github.Repository,
 ) error {
-	var repoIDs []int64
+	if len(repos) == 0 {
+		return nil
+	}
+
+	opts := &github.InstallationTokenOptions{
+		Permissions: &github.InstallationPermissions{
+			Contents: github.String("read"),
+		},
+	}
 	for _, repo := range repos {
-		repoIDs = append(repoIDs, repo.GetID())
+		opts.RepositoryIDs = append(opts.RepositoryIDs, repo.GetID())
 	}
 
-	token, _, err := w.
-		Clients.
-		App().
-		Apps.
-		CreateInstallationToken(
-			ctx,
-			in.GetID(),
-			&github.InstallationTokenOptions{
-				RepositoryIDs: repoIDs,
-				Permissions: &github.InstallationPermissions{
-					Contents: github.String("read"),
-				},
-			},
-		)
-	if err != nil {
-		return fmt.Errorf("github: unable to create installation token for git clone: %w", err)
-	}
-
-	auth := &http.BasicAuth{
-		Username: "x-access-token",
-		Password: token.GetToken(),
-	}
-
-	w.Logger.DebugContext(
+	return w.Connector.WithInstallation(
 		ctx,
-		"generated installation token for read-only git operations",
-		slog.String("installation", in.GetAccount().GetLogin()),
-		slog.Duration("token_ttl", time.Until(token.GetExpiresAt().Time)),
+		in.GetID(),
+		opts,
+		func(ctx context.Context, c *githubapi.InstallationClient) error {
+			// c.Git.GetTree(ctx, in.GetAccount().GetLogin(), repos[0].GetName(), "HEAD", true, 1)
+
+			auth := &http.BasicAuth{
+				Username: "x-access-token",
+				Password: c.InstallationToken,
+			}
+
+			for _, repo := range repos {
+				if isIgnored(repo) {
+					continue
+				}
+
+				if err := minibus.Send(
+					ctx,
+					messages.RepoFound{
+						ID:     generateRepoID(repo),
+						Source: "github",
+						Name:   repo.GetFullName(),
+					},
+				); err != nil {
+					return err
+				}
+
+				if err := w.sync(ctx, repo, auth); err != nil {
+					return err
+				}
+			}
+
+			return nil
+		},
 	)
-
-	// g, ctx := errgroup.WithContext(ctx)
-
-	for _, repo := range repos {
-		if isIgnored(repo) {
-			continue
-		}
-
-		// g.Go(func() error {
-		if err := minibus.Send(
-			ctx,
-			messages.RepoFound{
-				ID:     generateRepoID(repo),
-				Source: "github",
-				Name:   repo.GetFullName(),
-			},
-		); err != nil {
-			return err
-		}
-
-		if err := w.sync(ctx, repo, auth); err != nil {
-			return err
-		}
-		// })
-	}
-
-	return nil
-	// return g.Wait()
 }
 
 func (w *RepositoryWatcher) lostRepos(

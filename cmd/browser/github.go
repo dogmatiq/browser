@@ -9,7 +9,7 @@ import (
 	"net/http"
 
 	"github.com/dogmatiq/browser/components/github"
-	"github.com/dogmatiq/browser/internal/githubutils"
+	"github.com/dogmatiq/browser/internal/githubapi"
 	"github.com/dogmatiq/ferrite"
 	"github.com/dogmatiq/imbue"
 	"github.com/dogmatiq/minibus"
@@ -45,10 +45,10 @@ func init() {
 		container,
 		func(
 			ctx imbue.Context,
-			clients *githubutils.ClientSet,
+			conn *githubapi.Connector,
 		) (*github.CredentialServer, error) {
 			return &github.CredentialServer{
-				Clients: clients,
+				Connector: conn,
 			}, nil
 		},
 	)
@@ -57,12 +57,12 @@ func init() {
 		container,
 		func(
 			ctx imbue.Context,
-			clients *githubutils.ClientSet,
+			conn *githubapi.Connector,
 			logger *slog.Logger,
 		) (*github.RepositoryWatcher, error) {
 			return &github.RepositoryWatcher{
-				Clients: clients,
-				Logger:  logger,
+				Connector: conn,
+				Logger:    logger,
 			}, nil
 		},
 	)
@@ -115,7 +115,7 @@ func init() {
 		func(
 			ctx imbue.Context,
 			logger *slog.Logger,
-		) (*githubutils.ClientSet, error) {
+		) (*githubapi.Connector, error) {
 			content := []byte(githubAppPrivateKey.Value())
 			block, _ := pem.Decode(content)
 			if block == nil {
@@ -126,16 +126,16 @@ func init() {
 				return nil, fmt.Errorf("could not load GitHub private key: expected RSA PRIVATE KEY, found %s", block.Type)
 			}
 
-			pk, err := x509.ParsePKCS1PrivateKey(block.Bytes)
+			key, err := x509.ParsePKCS1PrivateKey(block.Bytes)
 			if err != nil {
 				return nil, fmt.Errorf("could not load GitHub private key: %w", err)
 			}
 
 			baseURL, _ := githubURL.Value()
 
-			return &githubutils.ClientSet{
+			return &githubapi.Connector{
 				ClientID:   githubAppClientID.Value(),
-				PrivateKey: pk,
+				PrivateKey: key,
 				BaseURL:    baseURL,
 			}, nil
 		},
