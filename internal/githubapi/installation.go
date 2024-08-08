@@ -4,12 +4,14 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"reflect"
+	"slices"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/google/go-github/v63/github"
 	githubrest "github.com/google/go-github/v63/github"
-	"github.com/google/uuid"
 	githubgql "github.com/shurcooL/githubv4"
 	"golang.org/x/oauth2"
 )
@@ -51,7 +53,7 @@ func (c *InstallationClient) token() (*oauth2.Token, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 
-	tokenID := uuid.NewString()
+	tokenID := c.parent.tokenID.Add(1)
 	token, _, err := c.parent.REST().Apps.CreateInstallationToken(
 		ctx,
 		c.InstallationID,
@@ -65,17 +67,18 @@ func (c *InstallationClient) token() (*oauth2.Token, error) {
 
 	c.Logger.Debug(
 		"github installation token generated",
-		slog.String("github_token_id", tokenID),
-		slog.Time("github_token_expires_at", expiresAt),
-		slog.Int64("active_github_tokens", c.parent.activeTokens.Add(1)),
+		slog.Uint64("token_id", tokenID),
+		slog.Time("expires_at", expiresAt),
+		slog.String("permissions", permissionsAsString(token.GetPermissions())),
+		slog.Int64("active_tokens", c.parent.activeTokens.Add(1)),
 	)
 
 	go func() {
 		logExpired := func() {
 			c.Logger.Debug(
 				"github installation token expired",
-				slog.String("github_token_id", tokenID),
-				slog.Int64("active_github_tokens", c.parent.activeTokens.Add(-1)),
+				slog.Uint64("token_id", tokenID),
+				slog.Int64("active_tokens", c.parent.activeTokens.Add(-1)),
 			)
 		}
 
@@ -107,7 +110,7 @@ func (c *InstallationClient) token() (*oauth2.Token, error) {
 	}, nil
 }
 
-func (c *InstallationClient) revokeToken(tokenID string, token *github.InstallationToken) bool {
+func (c *InstallationClient) revokeToken(tokenID uint64, token *github.InstallationToken) bool {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 
@@ -117,9 +120,9 @@ func (c *InstallationClient) revokeToken(tokenID string, token *github.Installat
 	if _, err := rest.Apps.RevokeInstallationToken(ctx); err != nil {
 		c.Logger.Warn(
 			"unable to revoke github installation token",
-			slog.String("github_token_id", tokenID),
+			slog.Uint64("token_id", tokenID),
 			slog.String("error", err.Error()),
-			slog.Int64("active_github_tokens", c.parent.activeTokens.Load()),
+			slog.Int64("active_tokens", c.parent.activeTokens.Load()),
 		)
 
 		return false
@@ -127,9 +130,41 @@ func (c *InstallationClient) revokeToken(tokenID string, token *github.Installat
 
 	c.Logger.Debug(
 		"github installation token revoked",
-		slog.String("github_token_id", tokenID),
-		slog.Int64("active_github_tokens", c.parent.activeTokens.Add(-1)),
+		slog.Uint64("token_id", tokenID),
+		slog.Int64("active_tokens", c.parent.activeTokens.Add(-1)),
 	)
 
 	return true
+}
+
+func permissionsAsString(p *githubrest.InstallationPermissions) string {
+	var perms []string
+
+	v := reflect.ValueOf(p).Elem()
+	t := v.Type()
+
+	for i := range t.NumField() {
+		field := t.Field(i)
+		value := v.Field(i)
+
+		if value.IsNil() {
+			continue
+		}
+
+		tag := field.Tag.Get("json")
+		name := strings.SplitN(tag, ",", 2)[0]
+
+		perms = append(
+			perms,
+			fmt.Sprintf(
+				"%s:%s",
+				name,
+				value.Elem().Interface(),
+			),
+		)
+	}
+
+	slices.Sort(perms)
+
+	return strings.Join(perms, ",")
 }

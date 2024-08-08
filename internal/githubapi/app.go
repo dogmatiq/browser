@@ -11,7 +11,6 @@ import (
 	"time"
 
 	githubrest "github.com/google/go-github/v63/github"
-	"github.com/google/uuid"
 	githubgql "github.com/shurcooL/githubv4"
 	"golang.org/x/oauth2"
 )
@@ -24,6 +23,7 @@ type AppClient struct {
 	BaseURL    *url.URL
 	Logger     *slog.Logger
 
+	tokenID      atomic.Uint64
 	activeTokens atomic.Int64
 
 	initOnce, closeOnce sync.Once
@@ -56,13 +56,13 @@ func (c *AppClient) InstallationClient(id int64, opts *githubrest.InstallationTo
 		parent:         c,
 		InstallationID: id,
 		TokenOptions:   opts,
-		Logger:         c.Logger.With("github_installation_id", id),
+		Logger:         c.Logger.With("installation_id", id),
 		closed:         make(chan struct{}),
 	}
 
 	http := oauth2.NewClient(
 		context.Background(),
-		tokenSourceFunc(inst.token),
+		newTokenSource(inst.token),
 	)
 
 	inst.rest = newRESTClient(c.BaseURL, http)
@@ -84,7 +84,7 @@ func (c *AppClient) init() {
 	c.initOnce.Do(func() {
 		http := oauth2.NewClient(
 			context.Background(),
-			tokenSourceFunc(c.token),
+			newTokenSource(c.token),
 		)
 		c.rest = newRESTClient(c.BaseURL, http)
 		c.gql = newGraphQLClient(c.BaseURL, http)
@@ -94,8 +94,8 @@ func (c *AppClient) init() {
 }
 
 func (c *AppClient) token() (*oauth2.Token, error) {
-	tokenID := uuid.NewString()
-	expiresAt := time.Now().Add(3 * time.Second)
+	tokenID := c.tokenID.Add(1)
+	expiresAt := time.Now().Add(tokenTTL)
 
 	token, err := generateToken(
 		tokenID,
@@ -109,9 +109,9 @@ func (c *AppClient) token() (*oauth2.Token, error) {
 
 	c.Logger.Debug(
 		"github application token generated",
-		slog.String("github_token_id", tokenID),
-		slog.Time("github_token_expires_at", expiresAt),
-		slog.Int64("active_github_tokens", c.activeTokens.Add(1)),
+		slog.Uint64("token_id", tokenID),
+		slog.Time("expires_at", expiresAt),
+		slog.Int64("active_tokens", c.activeTokens.Add(1)),
 	)
 
 	go func() {
@@ -123,8 +123,8 @@ func (c *AppClient) token() (*oauth2.Token, error) {
 		case <-expired.C:
 			c.Logger.Debug(
 				"github application token expired",
-				slog.String("github_token_id", tokenID),
-				slog.Int64("active_github_tokens", c.activeTokens.Add(1)),
+				slog.Uint64("token_id", tokenID),
+				slog.Int64("active_tokens", c.activeTokens.Add(-1)),
 			)
 		}
 	}()
