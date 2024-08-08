@@ -108,12 +108,6 @@ func (w *worker) handleGoModuleFound(
 			packages.NeedTypesInfo |
 			packages.NeedDeps,
 		Dir: output.Dir,
-		Logf: func(format string, args ...any) {
-			w.Logger.DebugContext(
-				ctx,
-				fmt.Sprintf(format, args...),
-			)
-		},
 		Env: env,
 	}
 

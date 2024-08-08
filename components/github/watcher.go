@@ -2,29 +2,23 @@ package github
 
 import (
 	"context"
-	"errors"
 	"fmt"
-	"io/fs"
 	"log/slog"
-	"os"
 	"path/filepath"
-	"strconv"
 
 	"github.com/dogmatiq/browser/internal/githubapi"
 	"github.com/dogmatiq/browser/messages"
 	"github.com/dogmatiq/minibus"
-	"github.com/go-git/go-git/v5"
-	"github.com/go-git/go-git/v5/plumbing/transport"
-	"github.com/go-git/go-git/v5/plumbing/transport/http"
 	"github.com/google/go-github/v63/github"
 	"golang.org/x/mod/modfile"
+	"golang.org/x/sync/errgroup"
 )
 
 // RepositoryWatcher publishes messages about the repositories that are
 // accessible to the GitHub application.
 type RepositoryWatcher struct {
-	Connector *githubapi.Connector
-	Logger    *slog.Logger
+	Client *githubapi.AppClient
+	Logger *slog.Logger
 }
 
 // Run starts the watcher.
@@ -34,15 +28,10 @@ func (w *RepositoryWatcher) Run(ctx context.Context) (err error) {
 	minibus.Subscribe[*github.RepositoryEvent](ctx)
 	minibus.Ready(ctx)
 
-	if err := w.Connector.WithApp(
+	if err := githubapi.Range(
 		ctx,
-		func(ctx context.Context, c *githubapi.AppClient) error {
-			return githubapi.Range(
-				ctx,
-				c.REST.Apps.ListInstallations,
-				w.addInstallation,
-			)
-		},
+		w.Client.REST().Apps.ListInstallations,
+		w.addInstallation,
 	); err != nil {
 		return err
 	}
@@ -116,28 +105,27 @@ func (w *RepositoryWatcher) handleRepositoryEvent(
 }
 
 func (w *RepositoryWatcher) addInstallation(ctx context.Context, in *github.Installation) error {
-	if err := w.Connector.WithInstallation(
-		ctx,
+	c := w.Client.InstallationClient(
 		in.GetID(),
 		&github.InstallationTokenOptions{
 			Permissions: &github.InstallationPermissions{
 				Metadata: github.String("read"),
 			},
 		},
-		func(ctx context.Context, c *githubapi.InstallationClient) error {
-			return githubapi.RangePages(
-				ctx,
-				func(ctx context.Context, opts *github.ListOptions) ([]*github.Repository, *github.Response, error) {
-					repos, res, err := c.REST.Apps.ListRepos(ctx, opts)
-					if err != nil {
-						return nil, res, err
-					}
-					return repos.Repositories, res, nil
-				},
-				func(ctx context.Context, repos []*github.Repository) error {
-					return w.foundRepos(ctx, in, repos...)
-				},
-			)
+	)
+	defer c.Close()
+
+	if err := githubapi.RangePages(
+		ctx,
+		func(ctx context.Context, opts *github.ListOptions) ([]*github.Repository, *github.Response, error) {
+			repos, res, err := c.REST().Apps.ListRepos(ctx, opts)
+			if err != nil {
+				return nil, res, err
+			}
+			return repos.Repositories, res, nil
+		},
+		func(ctx context.Context, repos []*github.Repository) error {
+			return w.foundRepos(ctx, in, repos...)
 		},
 	); err != nil {
 		return fmt.Errorf("unable to add %q installation: %w", in.GetAccount().GetLogin(), err)
@@ -151,55 +139,107 @@ func (w *RepositoryWatcher) foundRepos(
 	in *github.Installation,
 	repos ...*github.Repository,
 ) error {
-	if len(repos) == 0 {
-		return nil
-	}
+	g, ctx := errgroup.WithContext(ctx)
 
-	opts := &github.InstallationTokenOptions{
-		Permissions: &github.InstallationPermissions{
-			Contents: github.String("read"),
-		},
-	}
 	for _, repo := range repos {
-		opts.RepositoryIDs = append(opts.RepositoryIDs, repo.GetID())
+		if !isIgnored(repo) {
+			g.Go(func() error {
+				return w.foundRepo(ctx, in, repo)
+			})
+		}
 	}
 
-	return w.Connector.WithInstallation(
-		ctx,
+	return g.Wait()
+}
+
+func (w *RepositoryWatcher) foundRepo(
+	ctx context.Context,
+	in *github.Installation,
+	repo *github.Repository,
+) error {
+	c := w.Client.InstallationClient(
 		in.GetID(),
-		opts,
-		func(ctx context.Context, c *githubapi.InstallationClient) error {
-			// c.Git.GetTree(ctx, in.GetAccount().GetLogin(), repos[0].GetName(), "HEAD", true, 1)
-
-			auth := &http.BasicAuth{
-				Username: "x-access-token",
-				Password: c.InstallationToken,
-			}
-
-			for _, repo := range repos {
-				if isIgnored(repo) {
-					continue
-				}
-
-				if err := minibus.Send(
-					ctx,
-					messages.RepoFound{
-						ID:     generateRepoID(repo),
-						Source: "github",
-						Name:   repo.GetFullName(),
-					},
-				); err != nil {
-					return err
-				}
-
-				if err := w.sync(ctx, repo, auth); err != nil {
-					return err
-				}
-			}
-
-			return nil
+		&github.InstallationTokenOptions{
+			RepositoryIDs: []int64{repo.GetID()},
+			Permissions: &github.InstallationPermissions{
+				Contents: github.String("read"),
+			},
 		},
 	)
+	defer c.Close()
+
+	if err := minibus.Send(
+		ctx,
+		messages.RepoFound{
+			ID:     generateRepoID(repo),
+			Source: "github",
+			Name:   repo.GetFullName(),
+		},
+	); err != nil {
+		return err
+	}
+
+	tree, _, err := c.REST().Git.GetTree(
+		ctx,
+		repo.GetOwner().GetLogin(),
+		repo.GetName(),
+		"HEAD",
+		true,
+	)
+	if err != nil {
+		return err
+	}
+
+	if tree.GetTruncated() {
+		w.Logger.WarnContext(
+			ctx,
+			"truncated git tree results, some modules may go undetected",
+			slog.String("github_repo_name", repo.GetFullName()),
+			slog.String("github_repo_sha", tree.GetSHA()),
+		)
+	}
+
+	for _, entry := range tree.Entries {
+		if entry.GetType() != "blob" {
+			continue
+		}
+
+		if filepath.Base(entry.GetPath()) != "go.mod" {
+			continue
+		}
+
+		data, _, err := c.REST().Git.GetBlobRaw(
+			ctx,
+			repo.GetOwner().GetLogin(),
+			repo.GetName(),
+			entry.GetSHA(),
+		)
+		if err != nil {
+			return fmt.Errorf("unable to get go.mod content: %w", err)
+		}
+
+		mod, err := modfile.ParseLax(
+			entry.GetPath(),
+			data,
+			nil, /* version fixer*/
+		)
+		if err != nil {
+			return fmt.Errorf("unable to parse go.mod: %w", err)
+		}
+
+		if err := minibus.Send(
+			ctx,
+			messages.GoModuleFound{
+				RepoID:        generateRepoID(repo),
+				ModulePath:    mod.Module.Mod.Path,
+				ModuleVersion: tree.GetSHA(),
+			},
+		); err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
 
 func (w *RepositoryWatcher) lostRepos(
@@ -218,114 +258,4 @@ func (w *RepositoryWatcher) lostRepos(
 	}
 
 	return nil
-}
-
-func (w *RepositoryWatcher) sync(
-	ctx context.Context,
-	repo *github.Repository,
-	auth transport.AuthMethod,
-) error {
-	dir := filepath.Join(
-		os.TempDir(),
-		"dogma-browser",
-		"github",
-		strconv.FormatInt(repo.GetID(), 10),
-	)
-
-	clone, err := w.fetch(ctx, repo, auth, dir)
-	if errors.Is(err, git.ErrRepositoryNotExists) {
-		clone, err = w.clone(ctx, repo, auth, dir)
-	}
-	if err != nil {
-		return err
-	}
-
-	head, err := clone.Head()
-	if err != nil {
-		return fmt.Errorf("analyzer: unable to get HEAD of git repository: %w", err)
-	}
-
-	return filepath.WalkDir(
-		dir,
-		func(path string, entry fs.DirEntry, err error) error {
-			if err != nil {
-				return err
-			}
-
-			if entry.IsDir() || filepath.Base(path) != "go.mod" {
-				return nil
-			}
-
-			content, err := os.ReadFile(path)
-			if err != nil {
-				return err
-			}
-
-			mod, err := modfile.Parse(path, content, nil /* version fixer*/)
-			if err != nil {
-				return err
-			}
-
-			return minibus.Send(
-				ctx,
-				messages.GoModuleFound{
-					RepoID:        generateRepoID(repo),
-					ModulePath:    mod.Module.Mod.Path,
-					ModuleVersion: head.Hash().String(),
-				},
-			)
-		},
-	)
-}
-
-func (w *RepositoryWatcher) clone(
-	ctx context.Context,
-	repo *github.Repository,
-	auth transport.AuthMethod,
-	dir string,
-) (*git.Repository, error) {
-	if err := os.MkdirAll(dir, 0700); err != nil {
-		return nil, fmt.Errorf("analyzer: unable to create directory for git clone: %w", err)
-	}
-
-	clone, err := git.PlainCloneContext(
-		ctx,
-		dir,
-		false,
-		&git.CloneOptions{
-			URL:   repo.GetCloneURL(),
-			Auth:  auth,
-			Depth: 1,
-		},
-	)
-	if err != nil {
-		return nil, fmt.Errorf("analyzer: unable to clone git repository: %w", err)
-	}
-
-	return clone, nil
-}
-
-func (w *RepositoryWatcher) fetch(
-	ctx context.Context,
-	_ *github.Repository,
-	auth transport.AuthMethod,
-	dir string,
-) (*git.Repository, error) {
-	clone, err := git.PlainOpen(dir)
-	if err != nil {
-		return nil, fmt.Errorf("analyzer: unable to open git repository at for fetch: %w", err)
-	}
-
-	if err := clone.FetchContext(
-		ctx,
-		&git.FetchOptions{
-			Auth:  auth,
-			Depth: 1,
-			Prune: true,
-		},
-	); err != nil && !errors.Is(err, git.NoErrAlreadyUpToDate) {
-		return nil, fmt.Errorf("analyzer: unable to fetch git repository: %w", err)
-	}
-
-	return clone, nil
 }

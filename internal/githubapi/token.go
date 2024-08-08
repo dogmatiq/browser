@@ -10,22 +10,30 @@ import (
 	"golang.org/x/oauth2"
 )
 
-// GenerateAppToken generates a GitHub App token for the app with the given
-// client ID.
-func GenerateAppToken(
+// tokenSourceFunc adapts a function that returns a token into an
+// [oauth2.TokenSource].
+type tokenSourceFunc func() (*oauth2.Token, error)
+
+// Token returns a new token.
+func (f tokenSourceFunc) Token() (*oauth2.Token, error) {
+	return f()
+}
+
+func generateToken(
+	tokenID string,
 	clientID string,
 	privateKey *rsa.PrivateKey,
 	expiresAt time.Time,
-) (*oauth2.Token, error) {
+) (string, error) {
 	token, err := jwt.
 		NewBuilder().
+		JwtID(tokenID).
 		Issuer(clientID).
 		IssuedAt(time.Now()).
 		Expiration(expiresAt).
 		Build()
-
 	if err != nil {
-		return nil, fmt.Errorf("unable to build github app token claims: %w", err)
+		return "", fmt.Errorf("unable to generate github application token: %w", err)
 	}
 
 	data, err := jwt.Sign(
@@ -36,20 +44,8 @@ func GenerateAppToken(
 		),
 	)
 	if err != nil {
-		return nil, fmt.Errorf("unable to sign github app token: %w", err)
+		return "", fmt.Errorf("unable to sign github application token: %w", err)
 	}
 
-	return &oauth2.Token{
-		AccessToken: string(data),
-		Expiry:      expiresAt,
-	}, nil
-}
-
-// tokenSourceFunc adapts a function that returns a token into an
-// [oauth2.TokenSource].
-type tokenSourceFunc func() (*oauth2.Token, error)
-
-// Token returns a new token.
-func (f tokenSourceFunc) Token() (*oauth2.Token, error) {
-	return f()
+	return string(data), nil
 }

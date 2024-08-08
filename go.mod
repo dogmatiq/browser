@@ -9,7 +9,6 @@ require (
 	github.com/go-git/go-git/v5 v5.12.0
 	github.com/google/go-github/v63 v63.0.0
 	github.com/google/uuid v1.6.0
-	github.com/lestrrat-go/jwx v1.2.30
 	github.com/lestrrat-go/jwx/v2 v2.1.1
 	github.com/shurcooL/githubv4 v0.0.0-20240727222349-48295856cce7
 	golang.org/x/mod v0.19.0
@@ -43,7 +42,6 @@ require (
 	github.com/onsi/ginkgo v1.16.5 // indirect
 	github.com/onsi/gomega v1.32.0 // indirect
 	github.com/pjbgf/sha1cd v0.3.0 // indirect
-	github.com/pkg/errors v0.9.1 // indirect
 	github.com/rivo/uniseg v0.4.7 // indirect
 	github.com/segmentio/asm v1.2.0 // indirect
 	github.com/sergi/go-diff v1.3.2-0.20230802210424-5b0b94c5c0d3 // indirect

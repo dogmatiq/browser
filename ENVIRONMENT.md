@@ -5,11 +5,12 @@ This document describes the environment variables used by `browser`.
 | Name                       | Optionality         | Description                                                                |
 | -------------------------- | ------------------- | -------------------------------------------------------------------------- |
 | [`DEBUG`]                  | defaults to `false` | enable debug logging                                                       |
+| [`GITHUB_APP_CLIENT_ID`]   | required            | the client ID of the GitHub application used to read repository content    |
 | [`GITHUB_APP_HOOK_SECRET`] | required            | the secret used to verify GitHub web-hook requests are genuine             |
-| [`GITHUB_APP_ID`]          | required            | the ID of the GitHub application used to read repository content           |
 | [`GITHUB_APP_PRIVATE_KEY`] | required            | the private key for the GitHub application used to read repository content |
 | [`GITHUB_URL`]             | optional            | the base URL of the GitHub API                                             |
 | [`HTTP_LISTEN_PORT`]       | defaults to `8080`  | the port to listen on for HTTP requests                                    |
+| [`WORKER_COUNT`]           | defaults to `+8`    | number of concurrent analysis workers                                      |
 
 ⚠️ `browser` may consume other undocumented environment variables. This document
 only shows variables declared using [Ferrite].
@@ -39,6 +40,16 @@ export DEBUG=true
 export DEBUG=false # (default)
 ```
 
+### `GITHUB_APP_CLIENT_ID`
+
+> the client ID of the GitHub application used to read repository content
+
+The `GITHUB_APP_CLIENT_ID` variable **MUST NOT** be left undefined.
+
+```bash
+export GITHUB_APP_CLIENT_ID=foo # (non-normative)
+```
+
 ### `GITHUB_APP_HOOK_SECRET`
 
 > the secret used to verify GitHub web-hook requests are genuine
@@ -46,30 +57,6 @@ export DEBUG=false # (default)
 The `GITHUB_APP_HOOK_SECRET` variable **MUST NOT** be left undefined.
 
 ⚠️ This variable is **sensitive**; its value may contain private information.
-
-### `GITHUB_APP_ID`
-
-> the ID of the GitHub application used to read repository content
-
-The `GITHUB_APP_ID` variable's value **MUST** be `+1` or greater.
-
-```bash
-export GITHUB_APP_ID=+1                   # (non-normative) the minimum accepted value
-export GITHUB_APP_ID=+4150517416584649216 # (non-normative)
-export GITHUB_APP_ID=+5534023222112865280 # (non-normative)
-```
-
-<details>
-<summary>Signed integer syntax</summary>
-
-Signed integers can only be specified using decimal notation. A leading positive
-sign (`+`) is **OPTIONAL**. A leading negative sign (`-`) is **REQUIRED** in
-order to specify a negative value.
-
-Internally, the `GITHUB_APP_ID` variable is represented using a signed 64-bit
-integer type (`int64`); any value that overflows this data-type is invalid.
-
-</details>
 
 ### `GITHUB_APP_PRIVATE_KEY`
 
@@ -123,13 +110,38 @@ UNIX-like systems. Standard service names are published by IANA.
 
 </details>
 
+### `WORKER_COUNT`
+
+> number of concurrent analysis workers
+
+The `WORKER_COUNT` variable **MAY** be left undefined, in which case the default
+value of `+8` is used. Otherwise, the value **MUST** be `+1` or greater.
+
+```bash
+export WORKER_COUNT=+8 # (default)
+export WORKER_COUNT=+1 # (non-normative) the minimum accepted value
+```
+
+<details>
+<summary>Signed integer syntax</summary>
+
+Signed integers can only be specified using decimal notation. A leading positive
+sign (`+`) is **OPTIONAL**. A leading negative sign (`-`) is **REQUIRED** in
+order to specify a negative value.
+
+Internally, the `WORKER_COUNT` variable is represented using a signed 64-bit
+integer type (`int`); any value that overflows this data-type is invalid.
+
+</details>
+
 <!-- references -->
 
 [`debug`]: #DEBUG
 [ferrite]: https://github.com/dogmatiq/ferrite
+[`github_app_client_id`]: #GITHUB_APP_CLIENT_ID
 [`github_app_hook_secret`]: #GITHUB_APP_HOOK_SECRET
-[`github_app_id`]: #GITHUB_APP_ID
 [`github_app_private_key`]: #GITHUB_APP_PRIVATE_KEY
 [`github_url`]: #GITHUB_URL
 [`http_listen_port`]: #HTTP_LISTEN_PORT
 [rfc 2119]: https://www.rfc-editor.org/rfc/rfc2119.html
+[`worker_count`]: #WORKER_COUNT

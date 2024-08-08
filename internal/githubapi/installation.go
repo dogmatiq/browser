@@ -1,0 +1,135 @@
+package githubapi
+
+import (
+	"context"
+	"fmt"
+	"log/slog"
+	"sync"
+	"time"
+
+	"github.com/google/go-github/v63/github"
+	githubrest "github.com/google/go-github/v63/github"
+	"github.com/google/uuid"
+	githubgql "github.com/shurcooL/githubv4"
+	"golang.org/x/oauth2"
+)
+
+// InstallationClient is a client that accesses the GitHub APIs on behalf of a
+// specific installation of a GitHub application.
+type InstallationClient struct {
+	InstallationID int64
+	TokenOptions   *githubrest.InstallationTokenOptions
+	Logger         *slog.Logger
+
+	parent *AppClient
+	rest   *githubrest.Client
+	gql    *githubgql.Client
+
+	closeOnce sync.Once
+	closed    chan struct{}
+}
+
+// REST returns a client for the GitHub REST API.
+func (c *InstallationClient) REST() *githubrest.Client {
+	return c.rest
+}
+
+// GraphQL returns a client for the GitHub GraphQL API.
+func (c *InstallationClient) GraphQL() *githubgql.Client {
+	return c.gql
+}
+
+// Close closes the client by revoking the installation token.
+func (c *InstallationClient) Close() error {
+	c.closeOnce.Do(func() {
+		close(c.closed)
+	})
+	return nil
+}
+
+func (c *InstallationClient) token() (*oauth2.Token, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+
+	tokenID := uuid.NewString()
+	token, _, err := c.parent.REST().Apps.CreateInstallationToken(
+		ctx,
+		c.InstallationID,
+		c.TokenOptions,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("unable to create github installation token: %w", err)
+	}
+
+	expiresAt := token.GetExpiresAt().Time
+
+	c.Logger.Debug(
+		"github installation token generated",
+		slog.String("github_token_id", tokenID),
+		slog.Time("github_token_expires_at", expiresAt),
+		slog.Int64("active_github_tokens", c.parent.activeTokens.Add(1)),
+	)
+
+	go func() {
+		logExpired := func() {
+			c.Logger.Debug(
+				"github installation token expired",
+				slog.String("github_token_id", tokenID),
+				slog.Int64("active_github_tokens", c.parent.activeTokens.Add(-1)),
+			)
+		}
+
+		expired := time.NewTimer(time.Until(expiresAt))
+		defer expired.Stop()
+
+		select {
+		case <-c.parent.closed:
+			c.revokeToken(tokenID, token)
+
+		case <-c.closed:
+			if !c.revokeToken(tokenID, token) {
+				select {
+				case <-c.parent.closed:
+				case <-expired.C:
+					logExpired()
+				}
+			}
+
+		case <-expired.C:
+			logExpired()
+		}
+
+	}()
+
+	return &oauth2.Token{
+		AccessToken: token.GetToken(),
+		Expiry:      token.GetExpiresAt().Time,
+	}, nil
+}
+
+func (c *InstallationClient) revokeToken(tokenID string, token *github.InstallationToken) bool {
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+
+	rest := newRESTClient(c.parent.BaseURL, nil).
+		WithAuthToken(token.GetToken())
+
+	if _, err := rest.Apps.RevokeInstallationToken(ctx); err != nil {
+		c.Logger.Warn(
+			"unable to revoke github installation token",
+			slog.String("github_token_id", tokenID),
+			slog.String("error", err.Error()),
+			slog.Int64("active_github_tokens", c.parent.activeTokens.Load()),
+		)
+
+		return false
+	}
+
+	c.Logger.Debug(
+		"github installation token revoked",
+		slog.String("github_token_id", tokenID),
+		slog.Int64("active_github_tokens", c.parent.activeTokens.Add(-1)),
+	)
+
+	return true
+}

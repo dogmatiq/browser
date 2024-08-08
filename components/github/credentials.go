@@ -14,7 +14,7 @@ import (
 
 // CredentialServer responds to requests for repository credentials.
 type CredentialServer struct {
-	Connector *githubapi.Connector
+	Client *githubapi.AppClient
 }
 
 // Run starts the server.
@@ -57,10 +57,10 @@ func (s *CredentialServer) Run(ctx context.Context) error {
 // shouldRespond returns true if the server should respond to a request for
 // credentials for the given repository URL.
 func (s *CredentialServer) shouldRespond(repoURL *url.URL) bool {
-	if s.Connector.BaseURL == nil {
+	if s.Client.BaseURL == nil {
 		return repoURL.Host == "github.com"
 	}
-	return repoURL.Host == s.Connector.BaseURL.Host
+	return repoURL.Host == s.Client.BaseURL.Host
 }
 
 func (s *CredentialServer) getToken(
@@ -78,30 +78,24 @@ func (s *CredentialServer) getToken(
 	owner := matches[1]
 	repo := matches[2]
 
-	return githubapi.WithApp(
+	in, _, err := s.Client.REST().Apps.FindRepositoryInstallation(ctx, owner, repo)
+	if err != nil {
+		return "", fmt.Errorf("unable to find installation for %s/%s repository: %w", owner, repo, err)
+	}
+
+	token, _, err := s.Client.REST().Apps.CreateInstallationToken(
 		ctx,
-		s.Connector,
-		func(ctx context.Context, c *githubapi.AppClient) (string, error) {
-			in, _, err := c.REST.Apps.FindRepositoryInstallation(ctx, owner, repo)
-			if err != nil {
-				return "", fmt.Errorf("unable to find installation for %s/%s repository: %w", owner, repo, err)
-			}
-
-			token, _, err := c.REST.Apps.CreateInstallationToken(
-				ctx,
-				in.GetID(),
-				&github.InstallationTokenOptions{
-					Repositories: []string{repo},
-					Permissions: &github.InstallationPermissions{
-						Contents: github.String("read"),
-					},
-				},
-			)
-			if err != nil {
-				return "", fmt.Errorf("unable to create installation token for %s/%s repository: %w", owner, repo, err)
-			}
-
-			return token.GetToken(), nil
+		in.GetID(),
+		&github.InstallationTokenOptions{
+			Repositories: []string{repo},
+			Permissions: &github.InstallationPermissions{
+				Contents: github.String("read"),
+			},
 		},
 	)
+	if err != nil {
+		return "", fmt.Errorf("unable to create installation token for %s/%s repository: %w", owner, repo, err)
+	}
+
+	return token.GetToken(), nil
 }

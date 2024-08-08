@@ -45,10 +45,10 @@ func init() {
 		container,
 		func(
 			ctx imbue.Context,
-			conn *githubapi.Connector,
+			c *githubapi.AppClient,
 		) (*github.CredentialServer, error) {
 			return &github.CredentialServer{
-				Connector: conn,
+				Client: c,
 			}, nil
 		},
 	)
@@ -57,12 +57,12 @@ func init() {
 		container,
 		func(
 			ctx imbue.Context,
-			conn *githubapi.Connector,
+			c *githubapi.AppClient,
 			logger *slog.Logger,
 		) (*github.RepositoryWatcher, error) {
 			return &github.RepositoryWatcher{
-				Connector: conn,
-				Logger:    logger,
+				Client: c,
+				Logger: logger,
 			}, nil
 		},
 	)
@@ -115,7 +115,7 @@ func init() {
 		func(
 			ctx imbue.Context,
 			logger *slog.Logger,
-		) (*githubapi.Connector, error) {
+		) (*githubapi.AppClient, error) {
 			content := []byte(githubAppPrivateKey.Value())
 			block, _ := pem.Decode(content)
 			if block == nil {
@@ -133,10 +133,11 @@ func init() {
 
 			baseURL, _ := githubURL.Value()
 
-			return &githubapi.Connector{
+			return &githubapi.AppClient{
 				ClientID:   githubAppClientID.Value(),
 				PrivateKey: key,
 				BaseURL:    baseURL,
+				Logger:     logger,
 			}, nil
 		},
 	)
