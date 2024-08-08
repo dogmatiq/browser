@@ -6,9 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
-	"os"
 	"os/exec"
-	"strings"
 	"sync"
 
 	"github.com/dogmatiq/browser/messages"
@@ -17,7 +15,8 @@ import (
 )
 
 type worker struct {
-	Logger *slog.Logger
+	Environment []string
+	Logger      *slog.Logger
 }
 
 func (w *worker) Run(ctx context.Context) (err error) {
@@ -41,70 +40,22 @@ func (w *worker) handleGoModuleFound(
 ) error {
 	w.Logger.InfoContext(
 		ctx,
-		"downloading module",
+		"analyzing go module",
 		slog.String("module_path", m.ModulePath),
 		slog.String("module_version", m.ModuleVersion),
 	)
 
-	bin, err := os.Executable()
+	dir, err := w.downloadModule(ctx, m.ModulePath, m.ModuleVersion)
 	if err != nil {
-		return fmt.Errorf("unable to determine executable path: %w", err)
+		return err
 	}
 
-	env := append(
-		os.Environ(),
-		"GIT_CONFIG_SYSTEM=",
-		"GIT_CONFIG_GLOBAL=",
-		"GIT_ASKPASS="+bin,
-	)
-
-	cmd := exec.CommandContext(
+	w.Logger.DebugContext(
 		ctx,
-		"go",
-		"mod",
-		"download",
-		"-json",
-		fmt.Sprintf("%s@%s", m.ModulePath, m.ModuleVersion),
+		"downloaded go module",
+		slog.String("module_path", m.ModulePath),
+		slog.String("module_version", m.ModuleVersion),
 	)
-	cmd.Env = env
-
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-
-	if err := cmd.Run(); err != nil {
-		var output struct {
-			Error string
-		}
-
-		json.
-			NewDecoder(&stdout).
-			Decode(&output)
-
-		if output.Error != "" {
-			return fmt.Errorf("unable to download module: %s", output.Error)
-		}
-
-		return fmt.Errorf(
-			"analyzer: unable to download module: %w: %s",
-			err,
-			strings.ReplaceAll(
-				stderr.String(),
-				"\n",
-				" ",
-			),
-		)
-	}
-
-	var output struct {
-		Dir string
-	}
-
-	if err := json.
-		NewDecoder(&stdout).
-		Decode(&output); err != nil {
-		return fmt.Errorf("unable to parse 'go mod download' output: %w", err)
-	}
 
 	cfg := &packages.Config{
 		Context: ctx,
@@ -116,8 +67,8 @@ func (w *worker) handleGoModuleFound(
 			packages.NeedSyntax |
 			packages.NeedTypesInfo |
 			packages.NeedDeps,
-		Dir: output.Dir,
-		Env: env,
+		Dir: dir,
+		Env: w.Environment,
 	}
 
 	pkgs, err := packages.Load(cfg, "./...")
@@ -150,4 +101,53 @@ func (w *worker) handleGoModuleFound(
 	)
 
 	return nil
+}
+
+func (w *worker) downloadModule(
+	ctx context.Context,
+	path, version string,
+) (string, error) {
+	cmd := exec.CommandContext(
+		ctx,
+		"go",
+		"mod",
+		"download",
+		"-json",
+		fmt.Sprintf("%s@%s", path, version),
+	)
+	cmd.Env = w.Environment
+
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+
+	var output struct {
+		Dir   string
+		Error string
+	}
+
+	runErr := cmd.Run()
+	parseErr := json.
+		NewDecoder(&stdout).
+		Decode(&output)
+
+	if parseErr == nil && output.Error != "" {
+		return "", fmt.Errorf(
+			"unable to download module: %s",
+			output.Error,
+		)
+	}
+
+	if runErr != nil {
+		return "", fmt.Errorf(
+			"unable to download module: %w",
+			runErr,
+		)
+	}
+
+	if parseErr != nil {
+		return "", fmt.Errorf("unable to parse 'go mod download' output: %w", parseErr)
+	}
+
+	return output.Dir, nil
 }

@@ -2,7 +2,9 @@ package analyzer
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
+	"os"
 	"runtime"
 
 	"github.com/dogmatiq/browser/messages"
@@ -24,10 +26,23 @@ func (a *Analyzer) Run(ctx context.Context) error {
 		workers = runtime.NumCPU()
 	}
 
+	bin, err := os.Executable()
+	if err != nil {
+		return fmt.Errorf("unable to determine executable path: %w", err)
+	}
+
+	env := append(
+		os.Environ(),
+		"GIT_CONFIG_SYSTEM=",
+		"GIT_CONFIG_GLOBAL=",
+		"GIT_ASKPASS="+bin,
+	)
+
 	g, ctx := errgroup.WithContext(ctx)
 	for n := range workers {
 		g.Go(func() error {
 			w := &worker{
+				Environment: env,
 				Logger: a.Logger.With(
 					slog.Int("worker_id", n+1),
 				),
