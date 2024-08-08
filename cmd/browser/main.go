@@ -3,17 +3,12 @@ package main
 import (
 	"context"
 	"fmt"
-	"log/slog"
-	"net"
-	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
-	"time"
 
 	"github.com/dogmatiq/ferrite"
 	"github.com/dogmatiq/imbue"
-	"github.com/dogmatiq/minibus"
 )
 
 var (
@@ -28,7 +23,7 @@ func main() {
 	ferrite.Init()
 
 	if err := run(); err != nil {
-		fmt.Println(err)
+		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
 }
@@ -41,47 +36,16 @@ func run() error {
 	)
 	defer cancel()
 
-	g := container.WaitGroup(ctx)
+	bin, err := os.Executable()
+	if err != nil {
+		return fmt.Errorf("unable to determine executable path: %w", err)
+	}
 
-	imbue.Go1(
-		g,
-		func(
-			ctx context.Context,
-			options []minibus.Option,
-		) error {
-			return minibus.Run(ctx, options...)
-		},
-	)
+	socket := bin + ".sock"
 
-	imbue.Go2(
-		g,
-		func(
-			ctx context.Context,
-			server *http.Server,
-			logger *slog.Logger,
-		) error {
-			server.BaseContext = func(l net.Listener) context.Context {
-				logger.InfoContext(
-					ctx,
-					"listening for HTTP requests",
-					slog.String("listen_address", l.Addr().String()),
-				)
-				return ctx
-			}
+	if os.Getenv("GIT_ASKPASS") == bin {
+		return runAskpass(ctx, socket)
+	}
 
-			go func() {
-				<-ctx.Done()
-
-				shutdownCtx := context.WithoutCancel(ctx)
-				shutdownCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
-				defer cancel()
-
-				server.Shutdown(shutdownCtx)
-			}()
-
-			return server.ListenAndServe()
-		},
-	)
-
-	return g.Wait()
+	return runServer(ctx, socket)
 }

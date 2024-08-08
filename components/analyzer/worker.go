@@ -46,11 +46,16 @@ func (w *worker) handleGoModuleFound(
 		slog.String("module_version", m.ModuleVersion),
 	)
 
+	bin, err := os.Executable()
+	if err != nil {
+		return fmt.Errorf("unable to determine executable path: %w", err)
+	}
+
 	env := append(
 		os.Environ(),
 		"GIT_CONFIG_SYSTEM=",
 		"GIT_CONFIG_GLOBAL=",
-		"GIT_ASKPASS="+os.Getenv("GIT_ASKPASS"),
+		"GIT_ASKPASS="+bin,
 	)
 
 	cmd := exec.CommandContext(
@@ -77,7 +82,7 @@ func (w *worker) handleGoModuleFound(
 			Decode(&output)
 
 		if output.Error != "" {
-			return fmt.Errorf("analyzer: unable to download module: %s", output.Error)
+			return fmt.Errorf("unable to download module: %s", output.Error)
 		}
 
 		return fmt.Errorf(
@@ -98,7 +103,7 @@ func (w *worker) handleGoModuleFound(
 	if err := json.
 		NewDecoder(&stdout).
 		Decode(&output); err != nil {
-		return fmt.Errorf("analyzer: unable to parse 'go mod download' output: %w", err)
+		return fmt.Errorf("unable to parse 'go mod download' output: %w", err)
 	}
 
 	cfg := &packages.Config{
@@ -117,7 +122,7 @@ func (w *worker) handleGoModuleFound(
 
 	pkgs, err := packages.Load(cfg, "./...")
 	if err != nil {
-		return fmt.Errorf("analyzer: unable to load packages: %w", err)
+		return fmt.Errorf("unable to load packages: %w", err)
 	}
 
 	count := 0

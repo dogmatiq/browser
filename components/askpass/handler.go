@@ -3,7 +3,7 @@ package askpass
 import (
 	"context"
 	"encoding/json"
-	"net"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -15,6 +15,8 @@ import (
 
 // Handler is an [http.Handler] that publishes "askpass" requests to the message bus.
 type Handler struct {
+	Logger *slog.Logger
+
 	init   sync.Once
 	outbox chan<- any
 	ready  chan struct{}
@@ -46,17 +48,6 @@ func (h *Handler) Run(ctx context.Context) (err error) {
 }
 
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
-
-	if host, _, _ := net.SplitHostPort(r.RemoteAddr); host != "127.0.0.1" {
-		http.Error(
-			w,
-			http.StatusText(http.StatusForbidden),
-			http.StatusForbidden,
-		)
-		return
-	}
-
 	req, ok := h.parseRequest(w, r)
 	if !ok {
 		return
@@ -67,6 +58,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	defer h.pending.Delete(req.CorrelationID)
 
 	// wait for the outbox to become available
+	ctx := r.Context()
 	h.init.Do(func() {
 		h.ready = make(chan struct{})
 	})

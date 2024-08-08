@@ -1,7 +1,7 @@
 package main
 
 import (
-	"net/http"
+	"log/slog"
 
 	"github.com/dogmatiq/browser/components/askpass"
 	"github.com/dogmatiq/imbue"
@@ -9,12 +9,17 @@ import (
 )
 
 func init() {
-	imbue.With0(
+	imbue.With1(
 		container,
 		func(
 			ctx imbue.Context,
+			logger *slog.Logger,
 		) (*askpass.Handler, error) {
-			return &askpass.Handler{}, nil
+			// Note this handler ISNT added to the [http.ServeMux], it's served
+			// only via a unix socket.
+			return &askpass.Handler{
+				Logger: logger,
+			}, nil
 		},
 	)
 
@@ -26,18 +31,6 @@ func init() {
 			h *askpass.Handler,
 		) ([]minibus.Option, error) {
 			return append(options, minibus.WithFunc(h.Run)), nil
-		},
-	)
-
-	imbue.Decorate1(
-		container,
-		func(
-			ctx imbue.Context,
-			mux *http.ServeMux,
-			h *askpass.Handler,
-		) (*http.ServeMux, error) {
-			mux.Handle("/askpass", h)
-			return mux, nil
 		},
 	)
 }

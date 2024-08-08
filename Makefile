@@ -2,16 +2,14 @@ DOCKER_REPO = ghcr.io/dogmatiq/browser
 DOCKER_PLATFORMS += linux/amd64
 DOCKER_PLATFORMS += linux/arm64
 
-GO_FERRITE_BINARY = browser
-
 -include .makefiles/Makefile
 -include .makefiles/pkg/go/v1/Makefile
 -include .makefiles/pkg/go/v1/with-ferrite.mk
 -include .makefiles/pkg/docker/v1/Makefile
 
 .PHONY: run
-run: $(GO_DEBUG_DIR)/browser $(GO_DEBUG_DIR)/askpass
-	GIT_ASKPASS=$(PWD)/$(GO_DEBUG_DIR)/askpass $<
+run: $(GO_DEBUG_DIR)/browser
+	$<
 
 .makefiles/%:
 	@curl -sfL https://makefiles.dev/v1 | bash /dev/stdin "$@"

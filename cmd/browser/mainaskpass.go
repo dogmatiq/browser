@@ -4,38 +4,13 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"os/signal"
 	"strings"
-	"syscall"
 
 	"github.com/dogmatiq/browser/components/askpass"
-	"github.com/dogmatiq/ferrite"
 	"github.com/go-git/go-git/v5"
 )
 
-var (
-	httpListenPort = ferrite.
-		NetworkPort("HTTP_LISTEN_PORT", "the port to listen on for HTTP requests").
-		Required()
-)
-
-func main() {
-	ferrite.Init()
-
-	if err := run(); err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		os.Exit(1)
-	}
-}
-
-func run() error {
-	ctx, cancel := signal.NotifyContext(
-		context.Background(),
-		os.Interrupt,
-		syscall.SIGTERM,
-	)
-	defer cancel()
-
+func runAskpass(ctx context.Context, socket string) error {
 	if len(os.Args) < 2 {
 		return fmt.Errorf("expected at least one argument")
 	}
@@ -52,7 +27,7 @@ func run() error {
 
 	username, password, err := askpass.Ask(
 		ctx,
-		httpListenPort.Value(),
+		socket,
 		remote.Config().URLs[0],
 	)
 	if err != nil {
