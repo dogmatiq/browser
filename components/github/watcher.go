@@ -195,8 +195,8 @@ func (w *RepositoryWatcher) foundRepo(
 		w.Logger.WarnContext(
 			ctx,
 			"truncated git tree results, some modules may go undetected",
-			slog.String("github_repo_name", repo.GetFullName()),
-			slog.String("github_repo_sha", tree.GetSHA()),
+			slog.String("repo.name", repo.GetFullName()),
+			slog.String("repo.sha", tree.GetSHA()),
 		)
 	}
 

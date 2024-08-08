@@ -17,9 +17,9 @@ func (m RepoFound) LogTo(ctx context.Context, logger *slog.Logger) {
 	logger.DebugContext(
 		ctx,
 		"repository found",
-		slog.String("repo_source", m.Source),
-		slog.String("repo_id", m.ID),
-		slog.String("repo_name", m.Name),
+		slog.String("repo.source", m.Source),
+		slog.String("repo.id", m.ID),
+		slog.String("repo.name", m.Name),
 	)
 }
 
@@ -35,7 +35,7 @@ func (m RepoLost) LogTo(ctx context.Context, logger *slog.Logger) {
 	logger.DebugContext(
 		ctx,
 		"repository lost",
-		slog.String("repo_source", m.Source),
-		slog.String("repo_id", m.ID),
+		slog.String("repo.source", m.Source),
+		slog.String("repo.id", m.ID),
 	)
 }

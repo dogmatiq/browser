@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"os"
 	"time"
 
 	"github.com/dogmatiq/browser/components/askpass"
@@ -65,6 +66,8 @@ func runServer(ctx context.Context, socket string) error {
 			handler *askpass.Handler,
 			logger *slog.Logger,
 		) error {
+			defer os.Remove(socket)
+
 			lis, err := net.Listen("unix", socket)
 			if err != nil {
 				return err

@@ -18,14 +18,14 @@ func (m Request) LogTo(ctx context.Context, logger *slog.Logger) {
 	logger.DebugContext(
 		ctx,
 		"askpass request",
-		slog.Uint64("correlation_id", m.CorrelationID),
-		slog.String("repo_url", m.RepoURL.String()),
+		slog.String("repo.url", m.RepoURL.String()),
 	)
 }
 
 // Response is a response to a [Request] message.
 type Response struct {
 	CorrelationID uint64
+	RepoURL       *url.URL
 	Username      string
 	Password      string
 }
@@ -35,7 +35,7 @@ func (m Response) LogTo(ctx context.Context, logger *slog.Logger) {
 	logger.DebugContext(
 		ctx,
 		"askpass response",
-		slog.Uint64("correlation_id", m.CorrelationID),
-		slog.String("repo_username", m.Username),
+		slog.String("repo.url", m.RepoURL.String()),
+		slog.String("repo.user", m.Username),
 	)
 }

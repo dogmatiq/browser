@@ -37,7 +37,7 @@ func (d *Downloader) Run(ctx context.Context) (err error) {
 			w := &downloaderWorker{
 				Environment: d.Environment,
 				Logger: d.Logger.With(
-					slog.Int("downloader_id", n+1),
+					slog.Int("worker", n+1),
 				),
 			}
 			return w.Run(ctx)
@@ -121,9 +121,9 @@ func (w *downloaderWorker) download(
 	w.Logger.InfoContext(
 		ctx,
 		"downloaded go module",
-		slog.String("module_path", m.ModulePath),
-		slog.String("module_version", m.ModuleVersion),
-		slog.String("module_dir", output.Dir),
+		slog.String("mod.path", m.ModulePath),
+		slog.String("mod.version", m.ModuleVersion),
+		slog.String("mod.dir", output.Dir),
 	)
 
 	return minibus.Send(

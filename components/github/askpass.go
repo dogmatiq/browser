@@ -43,6 +43,7 @@ func (s *AskpassServer) Run(ctx context.Context) error {
 			ctx,
 			askpass.Response{
 				CorrelationID: req.CorrelationID,
+				RepoURL:       req.RepoURL,
 				Username:      "x-access-token",
 				Password:      token,
 			},
@@ -85,9 +86,9 @@ func (s *AskpassServer) getToken(
 			s.Logger.DebugContext(
 				ctx,
 				"reused existing installation token for askpass",
-				slog.String("repo_url", repoURL.String()),
-				slog.Duration("expires_in", time.Until(token.ExpiresAt.Time)),
-				slog.Time("expires_at", token.ExpiresAt.Time),
+				slog.String("repo.url", repoURL.String()),
+				slog.Duration("token.ttl", time.Until(token.ExpiresAt.Time)),
+				slog.Time("token.exp", token.ExpiresAt.Time),
 			)
 
 			return token.GetToken(), nil
@@ -110,9 +111,9 @@ func (s *AskpassServer) getToken(
 	s.Logger.DebugContext(
 		ctx,
 		"generated installation token for askpass",
-		slog.String("repo_url", repoURL.String()),
-		slog.Duration("expires_in", time.Until(token.ExpiresAt.Time)),
-		slog.Time("expires_at", token.ExpiresAt.Time),
+		slog.String("repo.url", repoURL.String()),
+		slog.Duration("token.ttl", time.Until(token.ExpiresAt.Time)),
+		slog.Time("token.exp", token.ExpiresAt.Time),
 	)
 
 	return token.GetToken(), nil

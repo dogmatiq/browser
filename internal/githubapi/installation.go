@@ -71,8 +71,8 @@ func (c *InstallationClient) token() (*oauth2.Token, error) {
 		slog.Int64("active_tokens", c.parent.activeTokens.Add(1)),
 		slog.String("repositories", repositoriesAsString(token.Repositories)),
 		slog.String("permissions", permissionsAsString(token.GetPermissions())),
-		slog.Duration("expires_in", time.Until(expiresAt)),
-		slog.Time("expires_at", expiresAt),
+		slog.Duration("token.ttl", time.Until(expiresAt)),
+		slog.Time("token.exp", expiresAt),
 	)
 
 	go func() {

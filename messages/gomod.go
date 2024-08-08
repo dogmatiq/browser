@@ -19,10 +19,10 @@ func (m GoModuleFound) LogTo(ctx context.Context, logger *slog.Logger) {
 	logger.DebugContext(
 		ctx,
 		"go module found",
-		slog.String("repo_source", m.RepoSource),
-		slog.String("repo_id", m.RepoID),
-		slog.String("module_path", m.ModulePath),
-		slog.String("module_version", m.ModuleVersion),
+		slog.String("repo.source", m.RepoSource),
+		slog.String("repo.id", m.RepoID),
+		slog.String("mod.path", m.ModulePath),
+		slog.String("mod.version", m.ModuleVersion),
 	)
 }
 
@@ -39,9 +39,9 @@ func (m GoModuleDownloaded) LogTo(ctx context.Context, logger *slog.Logger) {
 	logger.DebugContext(
 		ctx,
 		"go module downloaded",
-		slog.String("repo_source", m.RepoSource),
-		slog.String("repo_id", m.RepoID),
-		slog.String("module_path", m.ModulePath),
-		slog.String("module_version", m.ModuleVersion),
+		slog.String("repo.source", m.RepoSource),
+		slog.String("repo.id", m.RepoID),
+		slog.String("mod.path", m.ModulePath),
+		slog.String("mod.version", m.ModuleVersion),
 	)
 }

@@ -35,7 +35,7 @@ func (a *Analyzer) Run(ctx context.Context) error {
 			w := &analyzerWorker{
 				Environment: a.Environment,
 				Logger: a.Logger.With(
-					slog.Int("analyzer_id", n+1),
+					slog.Int("worker", n+1),
 				),
 			}
 			return w.Run(ctx)
@@ -101,9 +101,9 @@ func (w *analyzerWorker) analyze(
 				w.Logger.ErrorContext(
 					ctx,
 					"error loading package",
-					slog.String("module_path", m.ModulePath),
-					slog.String("module_version", m.ModuleVersion),
-					slog.String("package_path", p.PkgPath),
+					slog.String("mod.path", m.ModulePath),
+					slog.String("mod.version", m.ModuleVersion),
+					slog.String("pkg.path", p.PkgPath),
 					slog.String("error", err.Error()),
 				)
 			}
@@ -113,9 +113,9 @@ func (w *analyzerWorker) analyze(
 	w.Logger.InfoContext(
 		ctx,
 		"analyzed go module",
-		slog.String("module_path", m.ModulePath),
-		slog.String("module_version", m.ModuleVersion),
-		slog.Int("package_count", count),
+		slog.String("mod.path", m.ModulePath),
+		slog.String("mod.version", m.ModuleVersion),
+		slog.Int("pkg.count", count),
 	)
 
 	return nil
