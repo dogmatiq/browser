@@ -8,7 +8,6 @@ require (
 	github.com/dogmatiq/minibus v0.2.1
 	github.com/go-git/go-git/v5 v5.12.0
 	github.com/google/go-github/v63 v63.0.0
-	github.com/google/uuid v1.6.0
 	github.com/lestrrat-go/jwx/v2 v2.1.1
 	github.com/shurcooL/githubv4 v0.0.0-20240727222349-48295856cce7
 	golang.org/x/mod v0.19.0

@@ -4,13 +4,14 @@ This document describes the environment variables used by `browser`.
 
 | Name                       | Optionality         | Description                                                                |
 | -------------------------- | ------------------- | -------------------------------------------------------------------------- |
+| [`CONCURRENT_ANALYZERS`]   | defaults to `+8`    | the maximum number of Go modules to analyze concurrently                   |
+| [`CONCURRENT_DOWNLOADS`]   | defaults to `+80`   | the maximum number of Go modules to download concurrently                  |
 | [`DEBUG`]                  | defaults to `false` | enable debug logging                                                       |
 | [`GITHUB_APP_CLIENT_ID`]   | required            | the client ID of the GitHub application used to read repository content    |
 | [`GITHUB_APP_HOOK_SECRET`] | required            | the secret used to verify GitHub web-hook requests are genuine             |
 | [`GITHUB_APP_PRIVATE_KEY`] | required            | the private key for the GitHub application used to read repository content |
 | [`GITHUB_URL`]             | optional            | the base URL of the GitHub API                                             |
 | [`HTTP_LISTEN_PORT`]       | defaults to `8080`  | the port to listen on for HTTP requests                                    |
-| [`WORKER_COUNT`]           | defaults to `+8`    | number of concurrent analysis workers                                      |
 
 ⚠️ `browser` may consume other undocumented environment variables. This document
 only shows variables declared using [Ferrite].
@@ -27,6 +28,55 @@ syntactically valid, but may not be meaningful to `browser`.
 The key words **MUST**, **MUST NOT**, **REQUIRED**, **SHALL**, **SHALL NOT**,
 **SHOULD**, **SHOULD NOT**, **RECOMMENDED**, **MAY**, and **OPTIONAL** in this
 document are to be interpreted as described in [RFC 2119].
+
+### `CONCURRENT_ANALYZERS`
+
+> the maximum number of Go modules to analyze concurrently
+
+The `CONCURRENT_ANALYZERS` variable **MAY** be left undefined, in which case the
+default value of `+8` is used. Otherwise, the value **MUST** be `+1` or greater.
+
+```bash
+export CONCURRENT_ANALYZERS=+8 # (default)
+export CONCURRENT_ANALYZERS=+1 # (non-normative) the minimum accepted value
+```
+
+<details>
+<summary>Signed integer syntax</summary>
+
+Signed integers can only be specified using decimal notation. A leading positive
+sign (`+`) is **OPTIONAL**. A leading negative sign (`-`) is **REQUIRED** in
+order to specify a negative value.
+
+Internally, the `CONCURRENT_ANALYZERS` variable is represented using a signed
+64-bit integer type (`int`); any value that overflows this data-type is invalid.
+
+</details>
+
+### `CONCURRENT_DOWNLOADS`
+
+> the maximum number of Go modules to download concurrently
+
+The `CONCURRENT_DOWNLOADS` variable **MAY** be left undefined, in which case the
+default value of `+80` is used. Otherwise, the value **MUST** be `+1` or
+greater.
+
+```bash
+export CONCURRENT_DOWNLOADS=+80 # (default)
+export CONCURRENT_DOWNLOADS=+1  # (non-normative) the minimum accepted value
+```
+
+<details>
+<summary>Signed integer syntax</summary>
+
+Signed integers can only be specified using decimal notation. A leading positive
+sign (`+`) is **OPTIONAL**. A leading negative sign (`-`) is **REQUIRED** in
+order to specify a negative value.
+
+Internally, the `CONCURRENT_DOWNLOADS` variable is represented using a signed
+64-bit integer type (`int`); any value that overflows this data-type is invalid.
+
+</details>
 
 ### `DEBUG`
 
@@ -110,32 +160,10 @@ UNIX-like systems. Standard service names are published by IANA.
 
 </details>
 
-### `WORKER_COUNT`
-
-> number of concurrent analysis workers
-
-The `WORKER_COUNT` variable **MAY** be left undefined, in which case the default
-value of `+8` is used. Otherwise, the value **MUST** be `+1` or greater.
-
-```bash
-export WORKER_COUNT=+8 # (default)
-export WORKER_COUNT=+1 # (non-normative) the minimum accepted value
-```
-
-<details>
-<summary>Signed integer syntax</summary>
-
-Signed integers can only be specified using decimal notation. A leading positive
-sign (`+`) is **OPTIONAL**. A leading negative sign (`-`) is **REQUIRED** in
-order to specify a negative value.
-
-Internally, the `WORKER_COUNT` variable is represented using a signed 64-bit
-integer type (`int`); any value that overflows this data-type is invalid.
-
-</details>
-
 <!-- references -->
 
+[`concurrent_analyzers`]: #CONCURRENT_ANALYZERS
+[`concurrent_downloads`]: #CONCURRENT_DOWNLOADS
 [`debug`]: #DEBUG
 [ferrite]: https://github.com/dogmatiq/ferrite
 [`github_app_client_id`]: #GITHUB_APP_CLIENT_ID
@@ -144,4 +172,3 @@ integer type (`int`); any value that overflows this data-type is invalid.
 [`github_url`]: #GITHUB_URL
 [`http_listen_port`]: #HTTP_LISTEN_PORT
 [rfc 2119]: https://www.rfc-editor.org/rfc/rfc2119.html
-[`worker_count`]: #WORKER_COUNT

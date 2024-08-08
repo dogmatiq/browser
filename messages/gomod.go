@@ -25,3 +25,23 @@ func (m GoModuleFound) LogTo(ctx context.Context, logger *slog.Logger) {
 		slog.String("module_version", m.ModuleVersion),
 	)
 }
+
+type GoModuleDownloaded struct {
+	RepoSource    string
+	RepoID        string
+	ModulePath    string
+	ModuleVersion string
+	ModuleDir     string
+}
+
+// LogTo logs the message to the given logger.
+func (m GoModuleDownloaded) LogTo(ctx context.Context, logger *slog.Logger) {
+	logger.DebugContext(
+		ctx,
+		"go module downloaded",
+		slog.String("repo_source", m.RepoSource),
+		slog.String("repo_id", m.RepoID),
+		slog.String("module_path", m.ModulePath),
+		slog.String("module_version", m.ModuleVersion),
+	)
+}
