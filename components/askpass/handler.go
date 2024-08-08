@@ -3,7 +3,6 @@ package askpass
 import (
 	"context"
 	"encoding/json"
-	"log/slog"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -15,8 +14,6 @@ import (
 
 // Handler is an [http.Handler] that publishes "askpass" requests to the message bus.
 type Handler struct {
-	Logger *slog.Logger
-
 	init   sync.Once
 	outbox chan<- any
 	ready  chan struct{}
