@@ -45,7 +45,7 @@ func (w *worker) handleGoModuleFound(
 		slog.String("module_version", m.ModuleVersion),
 	)
 
-	dir, err := w.downloadModule(ctx, m.ModulePath, m.ModuleVersion)
+	dir, canonicalVersion, err := w.downloadModule(ctx, m.ModulePath, m.ModuleVersion)
 	if err != nil {
 		return err
 	}
@@ -54,7 +54,7 @@ func (w *worker) handleGoModuleFound(
 		ctx,
 		"downloaded go module",
 		slog.String("module_path", m.ModulePath),
-		slog.String("module_version", m.ModuleVersion),
+		slog.String("module_version", canonicalVersion),
 	)
 
 	cfg := &packages.Config{
@@ -86,6 +86,7 @@ func (w *worker) handleGoModuleFound(
 					ctx,
 					"error loading package",
 					slog.String("package_path", p.PkgPath),
+					slog.String("module_version", canonicalVersion),
 					slog.String("error", err.Error()),
 				)
 			}
@@ -96,7 +97,7 @@ func (w *worker) handleGoModuleFound(
 		ctx,
 		"loaded packages from go module",
 		slog.String("module_path", m.ModulePath),
-		slog.String("module_version", m.ModuleVersion),
+		slog.String("module_version", canonicalVersion),
 		slog.Int("package_count", count),
 	)
 
@@ -106,7 +107,7 @@ func (w *worker) handleGoModuleFound(
 func (w *worker) downloadModule(
 	ctx context.Context,
 	path, version string,
-) (string, error) {
+) (dir, canonical string, err error) {
 	cmd := exec.CommandContext(
 		ctx,
 		"go",
@@ -122,8 +123,9 @@ func (w *worker) downloadModule(
 	cmd.Stderr = &stderr
 
 	var output struct {
-		Dir   string
-		Error string
+		Dir     string
+		Version string
+		Error   string
 	}
 
 	runErr := cmd.Run()
@@ -132,22 +134,22 @@ func (w *worker) downloadModule(
 		Decode(&output)
 
 	if parseErr == nil && output.Error != "" {
-		return "", fmt.Errorf(
+		return "", "", fmt.Errorf(
 			"unable to download module: %s",
 			output.Error,
 		)
 	}
 
 	if runErr != nil {
-		return "", fmt.Errorf(
+		return "", "", fmt.Errorf(
 			"unable to download module: %w",
 			runErr,
 		)
 	}
 
 	if parseErr != nil {
-		return "", fmt.Errorf("unable to parse 'go mod download' output: %w", parseErr)
+		return "", "", fmt.Errorf("unable to parse 'go mod download' output: %w", parseErr)
 	}
 
-	return output.Dir, nil
+	return output.Dir, output.Version, nil
 }
