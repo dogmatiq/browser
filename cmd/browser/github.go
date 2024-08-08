@@ -41,14 +41,16 @@ var (
 )
 
 func init() {
-	imbue.With1(
+	imbue.With2(
 		container,
 		func(
 			ctx imbue.Context,
-			c *githubapi.AppClient,
-		) (*github.CredentialServer, error) {
-			return &github.CredentialServer{
-				Client: c,
+			client *githubapi.AppClient,
+			logger *slog.Logger,
+		) (*github.AskpassServer, error) {
+			return &github.AskpassServer{
+				Client: client,
+				Logger: logger,
 			}, nil
 		},
 	)
@@ -57,11 +59,11 @@ func init() {
 		container,
 		func(
 			ctx imbue.Context,
-			c *githubapi.AppClient,
+			client *githubapi.AppClient,
 			logger *slog.Logger,
 		) (*github.RepositoryWatcher, error) {
 			return &github.RepositoryWatcher{
-				Client: c,
+				Client: client,
 				Logger: logger,
 			}, nil
 		},
@@ -85,7 +87,7 @@ func init() {
 		func(
 			ctx imbue.Context,
 			options []minibus.Option,
-			s *github.CredentialServer,
+			s *github.AskpassServer,
 			w *github.RepositoryWatcher,
 			h *github.WebHookHandler,
 		) ([]minibus.Option, error) {
@@ -103,9 +105,9 @@ func init() {
 		func(
 			ctx imbue.Context,
 			mux *http.ServeMux,
-			h *github.WebHookHandler,
+			handler *github.WebHookHandler,
 		) (*http.ServeMux, error) {
-			mux.Handle("/github/hook", h)
+			mux.Handle("/github/hook", handler)
 			return mux, nil
 		},
 	)

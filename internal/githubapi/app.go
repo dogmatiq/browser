@@ -111,6 +111,7 @@ func (c *AppClient) token() (*oauth2.Token, error) {
 		"github application token generated",
 		slog.Uint64("token_id", tokenID),
 		slog.Int64("active_tokens", c.activeTokens.Add(1)),
+		slog.Duration("expires_in", tokenTTL),
 		slog.Time("expires_at", expiresAt),
 	)
 
