@@ -110,8 +110,8 @@ func (c *AppClient) token() (*oauth2.Token, error) {
 	c.Logger.Debug(
 		"github application token generated",
 		slog.Uint64("token_id", tokenID),
-		slog.Time("expires_at", expiresAt),
 		slog.Int64("active_tokens", c.activeTokens.Add(1)),
+		slog.Time("expires_at", expiresAt),
 	)
 
 	go func() {

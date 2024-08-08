@@ -143,7 +143,7 @@ func (w *worker) handleGoModuleFound(
 
 	w.Logger.InfoContext(
 		ctx,
-		"loaded packages",
+		"loaded packages from go module",
 		slog.String("module_path", m.ModulePath),
 		slog.String("module_version", m.ModuleVersion),
 		slog.Int("package_count", count),

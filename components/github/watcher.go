@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"path/filepath"
+	"strconv"
 
 	"github.com/dogmatiq/browser/internal/githubapi"
 	"github.com/dogmatiq/browser/messages"
@@ -171,8 +172,8 @@ func (w *RepositoryWatcher) foundRepo(
 	if err := minibus.Send(
 		ctx,
 		messages.RepoFound{
-			ID:     generateRepoID(repo),
-			Source: "github",
+			Source: w.repoSource(),
+			ID:     w.repoID(repo),
 			Name:   repo.GetFullName(),
 		},
 	); err != nil {
@@ -230,7 +231,8 @@ func (w *RepositoryWatcher) foundRepo(
 		if err := minibus.Send(
 			ctx,
 			messages.GoModuleFound{
-				RepoID:        generateRepoID(repo),
+				RepoSource:    w.repoSource(),
+				RepoID:        w.repoID(repo),
 				ModulePath:    mod.Module.Mod.Path,
 				ModuleVersion: tree.GetSHA(),
 			},
@@ -250,7 +252,8 @@ func (w *RepositoryWatcher) lostRepos(
 		if err := minibus.Send(
 			ctx,
 			messages.RepoLost{
-				ID: generateRepoID(repo),
+				Source: w.repoSource(),
+				ID:     w.repoID(repo),
 			},
 		); err != nil {
 			return err
@@ -258,4 +261,15 @@ func (w *RepositoryWatcher) lostRepos(
 	}
 
 	return nil
+}
+
+func (w *RepositoryWatcher) repoSource() string {
+	if w.Client.BaseURL == nil {
+		return "github"
+	}
+	return fmt.Sprintf("github@%s", w.Client.BaseURL.Host)
+}
+
+func (w *RepositoryWatcher) repoID(repo *github.Repository) string {
+	return strconv.FormatInt(repo.GetID(), 10)
 }

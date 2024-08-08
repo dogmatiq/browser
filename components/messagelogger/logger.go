@@ -21,7 +21,6 @@ func Run(ctx context.Context, l *slog.Logger) (err error) {
 
 	for m := range minibus.Inbox(ctx) {
 		typ := reflect.TypeOf(m)
-		l := l.With("message_type", typ.String())
 
 		impl := typ
 		for impl.Kind() == reflect.Ptr {
@@ -33,7 +32,11 @@ func Run(ctx context.Context, l *slog.Logger) (err error) {
 		if strings.HasPrefix(impl.PkgPath(), "github.com/dogmatiq/browser/") {
 			m.(LogAware).LogTo(ctx, l)
 		} else {
-			l.DebugContext(ctx, "third-party message")
+			l.DebugContext(
+				ctx,
+				"third-party message",
+				slog.String("message_type", typ.String()),
+			)
 		}
 	}
 

@@ -68,9 +68,10 @@ func (c *InstallationClient) token() (*oauth2.Token, error) {
 	c.Logger.Debug(
 		"github installation token generated",
 		slog.Uint64("token_id", tokenID),
-		slog.Time("expires_at", expiresAt),
-		slog.String("permissions", permissionsAsString(token.GetPermissions())),
 		slog.Int64("active_tokens", c.parent.activeTokens.Add(1)),
+		slog.String("repositories", repositoriesAsString(token.Repositories)),
+		slog.String("permissions", permissionsAsString(token.GetPermissions())),
+		slog.Time("expires_at", expiresAt),
 	)
 
 	go func() {
@@ -121,8 +122,8 @@ func (c *InstallationClient) revokeToken(tokenID uint64, token *github.Installat
 		c.Logger.Warn(
 			"unable to revoke github installation token",
 			slog.Uint64("token_id", tokenID),
-			slog.String("error", err.Error()),
 			slog.Int64("active_tokens", c.parent.activeTokens.Load()),
+			slog.String("error", err.Error()),
 		)
 
 		return false
@@ -135,6 +136,21 @@ func (c *InstallationClient) revokeToken(tokenID uint64, token *github.Installat
 	)
 
 	return true
+}
+
+func repositoriesAsString(repositories []*githubrest.Repository) string {
+	if len(repositories) == 0 {
+		return "(all)"
+	}
+
+	var repos []string
+	for _, repo := range repositories {
+		repos = append(repos, repo.GetName())
+	}
+
+	slices.Sort(repos)
+
+	return strings.Join(repos, ", ")
 }
 
 func permissionsAsString(p *githubrest.InstallationPermissions) string {
@@ -166,5 +182,5 @@ func permissionsAsString(p *githubrest.InstallationPermissions) string {
 
 	slices.Sort(perms)
 
-	return strings.Join(perms, ",")
+	return strings.Join(perms, ", ")
 }

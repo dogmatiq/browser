@@ -3,14 +3,13 @@ package messages
 import (
 	"context"
 	"log/slog"
-
-	"github.com/google/uuid"
 )
 
 // GoModuleFound is a message that indicates a Go module was found at a specific
 // version.
 type GoModuleFound struct {
-	RepoID        uuid.UUID
+	RepoSource    string
+	RepoID        string
 	ModulePath    string
 	ModuleVersion string
 }
@@ -20,7 +19,8 @@ func (m GoModuleFound) LogTo(ctx context.Context, logger *slog.Logger) {
 	logger.DebugContext(
 		ctx,
 		"go module found",
-		slog.String("repo_id", m.RepoID.String()),
+		slog.String("repo_source", m.RepoSource),
+		slog.String("repo_id", m.RepoID),
 		slog.String("module_path", m.ModulePath),
 		slog.String("module_version", m.ModuleVersion),
 	)
