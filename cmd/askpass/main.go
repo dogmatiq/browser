@@ -1,18 +1,16 @@
 package main
 
 import (
-	"bytes"
-	"encoding/json"
+	"context"
 	"fmt"
-	"io"
-	"net/http"
 	"os"
+	"os/signal"
 	"strings"
+	"syscall"
 
-	"github.com/dogmatiq/browser/messages"
+	"github.com/dogmatiq/browser/components/askpass"
 	"github.com/dogmatiq/ferrite"
 	"github.com/go-git/go-git/v5"
-	"github.com/google/uuid"
 )
 
 var (
@@ -31,6 +29,13 @@ func main() {
 }
 
 func run() error {
+	ctx, cancel := signal.NotifyContext(
+		context.Background(),
+		os.Interrupt,
+		syscall.SIGTERM,
+	)
+	defer cancel()
+
 	if len(os.Args) < 2 {
 		return fmt.Errorf("expected at least one argument")
 	}
@@ -45,46 +50,20 @@ func run() error {
 		return fmt.Errorf("unable to get origin: %w", err)
 	}
 
-	req := messages.RepoCredentialsRequest{
-		CorrelationID: uuid.New(),
-		RepoURL:       remote.Config().URLs[0],
-	}
-
-	body, err := json.Marshal(req)
-	if err != nil {
-		return fmt.Errorf("unable to marshal request: %w", err)
-	}
-
-	httpRes, err := http.Post(
-		fmt.Sprintf("http://127.0.0.1:%s/askpass", httpListenPort.Value()),
-		"application/json",
-		bytes.NewReader(body),
+	username, password, err := askpass.Ask(
+		ctx,
+		httpListenPort.Value(),
+		remote.Config().URLs[0],
 	)
 	if err != nil {
-		return fmt.Errorf("unable to POST to /askpass: %w", err)
-	}
-	defer httpRes.Body.Close()
-
-	if httpRes.StatusCode != http.StatusOK {
-		return fmt.Errorf("unexpected status code: %d", httpRes.StatusCode)
-	}
-
-	body, err = io.ReadAll(httpRes.Body)
-	if err != nil {
-		return fmt.Errorf("unable to read response body: %w", err)
-	}
-
-	var res messages.RepoCredentialsResponse
-
-	if err := json.Unmarshal(body, &res); err != nil {
-		return fmt.Errorf("unable to unmarshal response: %w", err)
+		return fmt.Errorf("unable to ask for credentials: %w", err)
 	}
 
 	switch {
 	case strings.HasPrefix(os.Args[1], "Username "):
-		fmt.Println(res.Username)
+		fmt.Println(username)
 	case strings.HasPrefix(os.Args[1], "Password "):
-		fmt.Println(res.Password)
+		fmt.Println(password)
 	default:
 		return fmt.Errorf("unexpected prompt: %s", os.Args[1])
 	}

@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+	"sync"
 
 	"github.com/dogmatiq/browser/messages"
 	"github.com/dogmatiq/minibus"
@@ -32,6 +33,8 @@ func (w *worker) Run(ctx context.Context) (err error) {
 	return nil
 }
 
+var once sync.Once
+
 func (w *worker) handleGoModuleFound(
 	ctx context.Context,
 	m messages.GoModuleFound,
@@ -45,7 +48,8 @@ func (w *worker) handleGoModuleFound(
 
 	env := append(
 		os.Environ(),
-		"GIT_CONFIG_NOSYSTEM=true",
+		"GIT_CONFIG_SYSTEM=",
+		"GIT_CONFIG_GLOBAL=",
 		"GIT_ASKPASS="+os.Getenv("GIT_ASKPASS"),
 	)
 

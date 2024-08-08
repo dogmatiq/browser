@@ -6,8 +6,8 @@ import (
 	"net/url"
 	"regexp"
 
+	"github.com/dogmatiq/browser/components/askpass"
 	"github.com/dogmatiq/browser/internal/githubapi"
-	"github.com/dogmatiq/browser/messages"
 	"github.com/dogmatiq/minibus"
 	"github.com/google/go-github/v63/github"
 )
@@ -19,30 +19,25 @@ type CredentialServer struct {
 
 // Run starts the server.
 func (s *CredentialServer) Run(ctx context.Context) error {
-	minibus.Subscribe[messages.RepoCredentialsRequest](ctx)
+	minibus.Subscribe[askpass.Request](ctx)
 	minibus.Ready(ctx)
 
-	for m := range minibus.Inbox(ctx) {
-		m := m.(messages.RepoCredentialsRequest)
+	for req := range minibus.Inbox(ctx) {
+		req := req.(askpass.Request)
 
-		u, err := url.Parse(m.RepoURL)
-		if err != nil {
-			return fmt.Errorf("cannot parse repository URL: %w", err)
-		}
-
-		if !s.shouldRespond(u) {
+		if !s.shouldRespond(req) {
 			continue
 		}
 
-		token, err := s.getToken(ctx, u)
+		token, err := s.getToken(ctx, req.RepoURL)
 		if err != nil {
 			return err
 		}
 
 		if err := minibus.Send(
 			ctx,
-			messages.RepoCredentialsResponse{
-				CorrelationID: m.CorrelationID,
+			askpass.Response{
+				CorrelationID: req.CorrelationID,
 				Username:      "x-access-token",
 				Password:      token,
 			},
@@ -56,11 +51,11 @@ func (s *CredentialServer) Run(ctx context.Context) error {
 
 // shouldRespond returns true if the server should respond to a request for
 // credentials for the given repository URL.
-func (s *CredentialServer) shouldRespond(repoURL *url.URL) bool {
+func (s *CredentialServer) shouldRespond(req askpass.Request) bool {
 	if s.Client.BaseURL == nil {
-		return repoURL.Host == "github.com"
+		return req.RepoURL.Host == "github.com"
 	}
-	return repoURL.Host == s.Client.BaseURL.Host
+	return req.RepoURL.Host == s.Client.BaseURL.Host
 }
 
 func (s *CredentialServer) getToken(

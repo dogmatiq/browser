@@ -39,38 +39,3 @@ func (m RepoLost) LogTo(ctx context.Context, logger *slog.Logger) {
 		slog.String("repo_id", m.ID.String()),
 	)
 }
-
-// RepoCredentialsRequest is a message that requests credentials for a
-// repository located within the given URL. The URL might not contain the
-// complete path to the repository.
-type RepoCredentialsRequest struct {
-	CorrelationID uuid.UUID
-	RepoURL       string
-}
-
-// LogTo logs the message to the given logger.
-func (m RepoCredentialsRequest) LogTo(ctx context.Context, logger *slog.Logger) {
-	logger.DebugContext(
-		ctx,
-		"requesting credentials for repository",
-		slog.String("correlation_id", m.CorrelationID.String()),
-		slog.String("repo_url", m.RepoURL),
-	)
-}
-
-// RepoCredentialsResponse is a response to a [RepoCredentialsRequest] message.
-type RepoCredentialsResponse struct {
-	CorrelationID uuid.UUID
-	Username      string
-	Password      string
-}
-
-// LogTo logs the message to the given logger.
-func (m RepoCredentialsResponse) LogTo(ctx context.Context, logger *slog.Logger) {
-	logger.DebugContext(
-		ctx,
-		"responding with credentials for repository",
-		slog.String("correlation_id", m.CorrelationID.String()),
-		slog.String("repo_username", m.Username),
-	)
-}

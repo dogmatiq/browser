@@ -133,12 +133,15 @@ func init() {
 
 			baseURL, _ := githubURL.Value()
 
-			return &githubapi.AppClient{
+			c := &githubapi.AppClient{
 				ClientID:   githubAppClientID.Value(),
 				PrivateKey: key,
 				BaseURL:    baseURL,
 				Logger:     logger,
-			}, nil
+			}
+			ctx.Defer(c.Close)
+
+			return c, nil
 		},
 	)
 }
