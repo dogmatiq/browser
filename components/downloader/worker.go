@@ -1,4 +1,4 @@
-package analyzer
+package downloader
 
 import (
 	"bytes"
@@ -7,58 +7,18 @@ import (
 	"fmt"
 	"log/slog"
 	"os/exec"
-	"runtime"
+	"time"
 
 	"github.com/dogmatiq/browser/messages"
 	"github.com/dogmatiq/minibus"
-	"golang.org/x/sync/errgroup"
 )
 
-// Downloader downloads all discovered Go modules.
-type Downloader struct {
-	Environment []string
-	Workers     int
-	Logger      *slog.Logger
-}
-
-// Run starts the downloader.
-func (d *Downloader) Run(ctx context.Context) (err error) {
-	minibus.Subscribe[messages.GoModuleFound](ctx)
-	minibus.Ready(ctx)
-
-	workers := d.Workers
-	if workers == 0 {
-		workers = runtime.NumCPU() * 10
-	}
-
-	g, ctx := errgroup.WithContext(ctx)
-	for n := range workers {
-		g.Go(func() error {
-			w := &downloaderWorker{
-				Environment: d.Environment,
-				Logger: d.Logger.With(
-					slog.Int("worker", n+1),
-				),
-			}
-			return w.Run(ctx)
-		})
-	}
-
-	d.Logger.InfoContext(
-		ctx,
-		"started downloader",
-		slog.Int("workers", workers),
-	)
-
-	return g.Wait()
-}
-
-type downloaderWorker struct {
+type worker struct {
 	Environment []string
 	Logger      *slog.Logger
 }
 
-func (w *downloaderWorker) Run(ctx context.Context) (err error) {
+func (w *worker) Run(ctx context.Context) (err error) {
 	for m := range minibus.Inbox(ctx) {
 		switch m := m.(type) {
 		case messages.GoModuleFound:
@@ -71,10 +31,25 @@ func (w *downloaderWorker) Run(ctx context.Context) (err error) {
 	return nil
 }
 
-func (w *downloaderWorker) download(
+func (w *worker) download(
 	ctx context.Context,
 	m messages.GoModuleFound,
 ) error {
+	start := time.Now()
+
+	logger := w.Logger.With(
+		slog.Group(
+			"module",
+			slog.String("path", m.ModulePath),
+			slog.String("version", m.ModuleVersion),
+		),
+	)
+
+	logger.InfoContext(
+		ctx,
+		"downloading go module",
+	)
+
 	cmd := exec.CommandContext(
 		ctx,
 		"go",
@@ -96,6 +71,7 @@ func (w *downloaderWorker) download(
 	}
 
 	runErr := cmd.Run()
+
 	parseErr := json.
 		NewDecoder(&stdout).
 		Decode(&output)
@@ -118,12 +94,10 @@ func (w *downloaderWorker) download(
 		return fmt.Errorf("unable to parse 'go mod download' output: %w", parseErr)
 	}
 
-	w.Logger.InfoContext(
+	logger.InfoContext(
 		ctx,
 		"downloaded go module",
-		slog.String("mod.path", m.ModulePath),
-		slog.String("mod.version", m.ModuleVersion),
-		slog.String("mod.dir", output.Dir),
+		slog.Duration("elapsed", time.Since(start)),
 	)
 
 	return minibus.Send(

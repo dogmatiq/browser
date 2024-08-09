@@ -2,7 +2,6 @@ package github
 
 import (
 	"context"
-	"fmt"
 	"log/slog"
 	"net/url"
 	"regexp"
@@ -10,8 +9,9 @@ import (
 
 	"github.com/dogmatiq/browser/components/askpass"
 	"github.com/dogmatiq/browser/internal/githubapi"
+	"github.com/dogmatiq/browser/messages"
 	"github.com/dogmatiq/minibus"
-	"github.com/google/go-github/v63/github"
+	"golang.org/x/oauth2"
 )
 
 // AskpassServer responds to requests for repository credentials.
@@ -19,35 +19,28 @@ type AskpassServer struct {
 	Client *githubapi.AppClient
 	Logger *slog.Logger
 
-	cache map[string]*github.InstallationToken // owner (org/user) -> token
+	reposByID   map[string]*askpassRepo
+	reposByName map[string]*askpassRepo
+}
+
+type askpassRepo struct {
+	ID          int64
+	Name        string
+	TokenSource oauth2.TokenSource
 }
 
 // Run starts the server.
 func (s *AskpassServer) Run(ctx context.Context) error {
+	minibus.Subscribe[messages.RepoFound](ctx)
+	minibus.Subscribe[messages.RepoLost](ctx)
 	minibus.Subscribe[askpass.Request](ctx)
 	minibus.Ready(ctx)
 
-	for req := range minibus.Inbox(ctx) {
-		req := req.(askpass.Request)
+	s.reposByID = map[string]*askpassRepo{}
+	s.reposByName = map[string]*askpassRepo{}
 
-		if !s.shouldRespond(req) {
-			continue
-		}
-
-		token, err := s.getToken(ctx, req.RepoURL)
-		if err != nil {
-			return err
-		}
-
-		if err := minibus.Send(
-			ctx,
-			askpass.Response{
-				CorrelationID: req.CorrelationID,
-				RepoURL:       req.RepoURL,
-				Username:      "x-access-token",
-				Password:      token,
-			},
-		); err != nil {
+	for m := range minibus.Inbox(ctx) {
+		if err := s.handleMessage(ctx, m); err != nil {
 			return err
 		}
 	}
@@ -55,91 +48,125 @@ func (s *AskpassServer) Run(ctx context.Context) error {
 	return nil
 }
 
-// shouldRespond returns true if the server should respond to a request for
-// credentials for the given repository URL.
-func (s *AskpassServer) shouldRespond(req askpass.Request) bool {
-	if s.Client.BaseURL == nil {
-		return req.RepoURL.Host == "github.com"
+func (s *AskpassServer) handleMessage(
+	ctx context.Context,
+	m any,
+) error {
+	switch m := m.(type) {
+	case messages.RepoFound:
+		return s.handleRepoFound(ctx, m)
+	case messages.RepoLost:
+		return s.handleRepoLost(ctx, m)
+	case askpass.Request:
+		return s.handleAskpassRequest(ctx, m)
+	default:
+		panic("unexpected message type")
 	}
-	return req.RepoURL.Host == s.Client.BaseURL.Host
 }
 
-func (s *AskpassServer) getToken(
+func (s *AskpassServer) handleRepoFound(
 	ctx context.Context,
-	repoURL *url.URL,
-) (string, error) {
-	matches := regexp.
-		MustCompile(`^/([^/]+)/([^/.]+)`).
-		FindStringSubmatch(repoURL.Path)
-
-	if matches == nil {
-		return "", fmt.Errorf("invalid repository URL: %s", repoURL)
+	m messages.RepoFound,
+) error {
+	if m.RepoSource != repoSource(s.Client) {
+		return nil
 	}
 
-	owner := matches[1]
-	repo := matches[2]
-
-	token, ok := s.cache[owner]
-
-	if ok {
-		if time.Until(token.ExpiresAt.Time) > 1*time.Minute {
-			s.Logger.DebugContext(
-				ctx,
-				"reused existing installation token for askpass",
-				slog.String("repo.url", repoURL.String()),
-				slog.Duration("token.ttl", time.Until(token.ExpiresAt.Time)),
-				slog.Time("token.exp", token.ExpiresAt.Time),
-			)
-
-			return token.GetToken(), nil
-		}
-
-		delete(s.cache, owner)
-	}
-
-	if s.cache == nil {
-		s.cache = map[string]*github.InstallationToken{}
-	}
-
-	token, err := s.generateToken(ctx, owner, repo)
+	repoID, err := unmarshalRepoID(m.RepoID)
 	if err != nil {
-		return "", err
+		return err
 	}
 
-	s.cache[owner] = token
+	in, _, err := s.Client.REST().Apps.FindRepositoryInstallationByID(ctx, repoID)
+	if err != nil {
+		return err
+	}
 
-	s.Logger.DebugContext(
-		ctx,
-		"generated installation token for askpass",
-		slog.String("repo.url", repoURL.String()),
-		slog.Duration("token.ttl", time.Until(token.ExpiresAt.Time)),
-		slog.Time("token.exp", token.ExpiresAt.Time),
-	)
+	r := &askpassRepo{
+		ID:          repoID,
+		Name:        m.RepoName,
+		TokenSource: s.Client.InstallationTokenSource(in.GetID()),
+	}
 
-	return token.GetToken(), nil
+	s.reposByID[m.RepoID] = r
+	s.reposByName[m.RepoName] = r
+
+	return nil
 }
 
-func (s *AskpassServer) generateToken(
-	ctx context.Context,
-	owner, repo string,
-) (*github.InstallationToken, error) {
-	in, _, err := s.Client.REST().Apps.FindRepositoryInstallation(ctx, owner, repo)
-	if err != nil {
-		return nil, fmt.Errorf("unable to find installation for %s/%s repository: %w", owner, repo, err)
+func (s *AskpassServer) handleRepoLost(
+	_ context.Context,
+	m messages.RepoLost,
+) error {
+	if m.RepoSource != repoSource(s.Client) {
+		return nil
 	}
 
-	token, _, err := s.Client.REST().Apps.CreateInstallationToken(
+	repo := s.reposByID[m.RepoID]
+	delete(s.reposByID, m.RepoID)
+	delete(s.reposByName, repo.Name)
+
+	return nil
+}
+
+func (s *AskpassServer) handleAskpassRequest(
+	ctx context.Context,
+	m askpass.Request,
+) (err error) {
+	start := time.Now()
+	defer func() {
+		s.Logger.DebugContext(
+			ctx,
+			"askpass request handled",
+			slog.Duration("elapsed", time.Since(start)),
+			slog.Any("error", err),
+		)
+	}()
+
+	repoName, ok := s.parseRepoURL(m.RepoURL)
+	if !ok {
+		return nil
+	}
+
+	repo, ok := s.reposByName[repoName]
+	if !ok {
+		return nil
+	}
+
+	token, err := repo.TokenSource.Token()
+	if err != nil {
+		return err
+	}
+
+	return minibus.Send(
 		ctx,
-		in.GetID(),
-		&github.InstallationTokenOptions{
-			Permissions: &github.InstallationPermissions{
-				Contents: github.String("read"),
-			},
+		askpass.Response{
+			CorrelationID: m.CorrelationID,
+			RepoSource:    repoSource(s.Client),
+			RepoID:        marshalRepoID(repo.ID),
+			RepoURL:       m.RepoURL,
+			Username:      "x-access-token",
+			Password:      token.AccessToken,
 		},
 	)
-	if err != nil {
-		return nil, fmt.Errorf("unable to create installation token for %s/%s repository: %w", owner, repo, err)
+}
+
+func (s *AskpassServer) parseRepoURL(u *url.URL) (string, bool) {
+	if s.Client.BaseURL == nil {
+		if u.Host != "github.com" {
+			return "", false
+		}
+	} else if u.Host != s.Client.BaseURL.Host {
+		return "", false
 	}
 
-	return token, nil
+	matches := regexp.
+		MustCompile(`^/([^/]+/[^/.]+)`).
+		FindStringSubmatch(u.Path)
+
+	if matches == nil {
+		return "", false
+	}
+
+	return matches[1], true
 }

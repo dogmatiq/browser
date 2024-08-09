@@ -7,8 +7,6 @@ import (
 	"net/http"
 	"net/url"
 	"sync"
-	"sync/atomic"
-	"time"
 
 	githubrest "github.com/google/go-github/v63/github"
 	githubgql "github.com/shurcooL/githubv4"
@@ -23,13 +21,12 @@ type AppClient struct {
 	BaseURL    *url.URL
 	Logger     *slog.Logger
 
-	tokenID      atomic.Uint64
-	activeTokens atomic.Int64
+	initOnce sync.Once
+	rest     *githubrest.Client
+	gql      *githubgql.Client
 
-	initOnce, closeOnce sync.Once
-	closed              chan struct{}
-	rest                *githubrest.Client
-	gql                 *githubgql.Client
+	clients      sync.Map // map[int64]*InstallationClient
+	tokenSources sync.Map // map[int64]oauth2.TokenSource
 }
 
 // REST returns a client for the GitHub REST API.
@@ -46,94 +43,60 @@ func (c *AppClient) GraphQL() *githubgql.Client {
 
 // InstallationClient creates a new client that accesses the GitHub APIs on
 // behalf of a specific installation of a GitHub application.
-func (c *AppClient) InstallationClient(id int64, opts *githubrest.InstallationTokenOptions) *InstallationClient {
-	perms := opts.GetPermissions()
-	if perms == nil || *perms == (githubrest.InstallationPermissions{}) {
-		panic("must provide explicit permissions for installation token")
+func (c *AppClient) InstallationClient(id int64) *InstallationClient {
+	cli, ok := c.clients.Load(id)
+
+	if !ok {
+		http := oauth2.NewClient(
+			context.Background(),
+			c.InstallationTokenSource(id),
+		)
+
+		cli, _ = c.clients.LoadOrStore(
+			id,
+			&InstallationClient{
+				rest: newRESTClient(c.BaseURL, http),
+				gql:  newGraphQLClient(c.BaseURL, http),
+			},
+		)
 	}
 
-	inst := &InstallationClient{
-		parent:         c,
-		InstallationID: id,
-		TokenOptions:   opts,
-		Logger:         c.Logger.With("installation_id", id),
-		closed:         make(chan struct{}),
-	}
-
-	http := oauth2.NewClient(
-		context.Background(),
-		newTokenSource(inst.token),
-	)
-
-	inst.rest = newRESTClient(c.BaseURL, http)
-	inst.gql = newGraphQLClient(c.BaseURL, http)
-
-	return inst
+	return cli.(*InstallationClient)
 }
 
-// Close closes the client.
-func (c *AppClient) Close() error {
-	c.init()
-	c.closeOnce.Do(func() {
-		close(c.closed)
-	})
-	return nil
+// InstallationTokenSource returns a token source that creates installation
+// tokens for a specific installation of a GitHub application.
+func (c *AppClient) InstallationTokenSource(id int64) oauth2.TokenSource {
+	ts, ok := c.tokenSources.Load(id)
+
+	if !ok {
+		ts, _ = c.tokenSources.LoadOrStore(
+			id,
+			oauth2.ReuseTokenSource(
+				nil,
+				&installationTokenSource{
+					Client:         c,
+					InstallationID: id,
+				},
+			),
+		)
+	}
+
+	return ts.(oauth2.TokenSource)
 }
 
 func (c *AppClient) init() {
 	c.initOnce.Do(func() {
 		http := oauth2.NewClient(
 			context.Background(),
-			newTokenSource(c.token),
+			&appTokenSource{
+				ClientID:   c.ClientID,
+				PrivateKey: c.PrivateKey,
+			},
 		)
 		c.rest = newRESTClient(c.BaseURL, http)
 		c.gql = newGraphQLClient(c.BaseURL, http)
-
-		c.closed = make(chan struct{})
 	})
-}
-
-func (c *AppClient) token() (*oauth2.Token, error) {
-	tokenID := c.tokenID.Add(1)
-	expiresAt := time.Now().Add(tokenTTL)
-
-	token, err := generateToken(
-		tokenID,
-		c.ClientID,
-		c.PrivateKey,
-		expiresAt,
-	)
-	if err != nil {
-		return nil, err
-	}
-
-	c.Logger.Debug(
-		"github application token generated",
-		slog.Uint64("token_id", tokenID),
-		slog.Int64("active_tokens", c.activeTokens.Add(1)),
-		slog.Duration("token.ttl", tokenTTL),
-		slog.Time("token.exp", expiresAt),
-	)
-
-	go func() {
-		expired := time.NewTimer(time.Until(expiresAt))
-		defer expired.Stop()
-
-		select {
-		case <-c.closed:
-		case <-expired.C:
-			c.Logger.Debug(
-				"github application token expired",
-				slog.Uint64("token_id", tokenID),
-				slog.Int64("active_tokens", c.activeTokens.Add(-1)),
-			)
-		}
-	}()
-
-	return &oauth2.Token{
-		AccessToken: token,
-		Expiry:      expiresAt,
-	}, nil
 }
 
 func newRESTClient(u *url.URL, h *http.Client) *githubrest.Client {

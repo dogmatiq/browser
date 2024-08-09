@@ -35,7 +35,10 @@ func Run(ctx context.Context, l *slog.Logger) (err error) {
 			l.DebugContext(
 				ctx,
 				"third-party message",
-				slog.String("message.type", typ.String()),
+				slog.Group(
+					"message",
+					slog.String("type", typ.String()),
+				),
 			)
 		}
 	}

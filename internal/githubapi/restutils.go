@@ -25,6 +25,7 @@ func Range[T any](
 					return err
 				}
 			}
+
 			return nil
 		},
 	)

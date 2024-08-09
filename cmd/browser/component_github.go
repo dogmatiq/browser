@@ -50,7 +50,9 @@ func init() {
 		) (*github.AskpassServer, error) {
 			return &github.AskpassServer{
 				Client: client,
-				Logger: logger,
+				Logger: logger.With(
+					slog.String("component", "github.askpass"),
+				),
 			}, nil
 		},
 	)
@@ -64,7 +66,9 @@ func init() {
 		) (*github.RepositoryWatcher, error) {
 			return &github.RepositoryWatcher{
 				Client: client,
-				Logger: logger,
+				Logger: logger.With(
+					slog.String("component", "github.watcher"),
+				),
 			}, nil
 		},
 	)
@@ -77,7 +81,9 @@ func init() {
 		) (*github.WebHookHandler, error) {
 			return &github.WebHookHandler{
 				Secret: githubAppHookSecret.Value(),
-				Logger: logger,
+				Logger: logger.With(
+					slog.String("component", "github.webhook"),
+				),
 			}, nil
 		},
 	)
@@ -141,7 +147,6 @@ func init() {
 				BaseURL:    baseURL,
 				Logger:     logger,
 			}
-			ctx.Defer(c.Close)
 
 			return c, nil
 		},

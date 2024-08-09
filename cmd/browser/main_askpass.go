@@ -5,15 +5,19 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/dogmatiq/browser/components/askpass"
 	"github.com/go-git/go-git/v5"
 )
 
-func runAskpass(ctx context.Context, socket string) error {
+func runAskpass(ctx context.Context) error {
 	if len(os.Args) < 2 {
 		return fmt.Errorf("expected at least one argument")
 	}
+
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
 
 	repo, err := git.PlainOpen(".")
 	if err != nil {
@@ -27,7 +31,7 @@ func runAskpass(ctx context.Context, socket string) error {
 
 	username, password, err := askpass.Ask(
 		ctx,
-		socket,
+		os.Getenv("ASKPASS_ADDR"),
 		remote.Config().URLs[0],
 	)
 	if err != nil {

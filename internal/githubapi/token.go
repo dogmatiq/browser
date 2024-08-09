@@ -1,9 +1,9 @@
 package githubapi
 
 import (
+	"context"
 	"crypto/rsa"
 	"fmt"
-	"strconv"
 	"time"
 
 	"github.com/lestrrat-go/jwx/v2/jwa"
@@ -11,55 +11,63 @@ import (
 	"golang.org/x/oauth2"
 )
 
-const (
-	tokenTTL          = 15 * time.Second
-	tokenExpiryBuffer = 3 * time.Second
-)
-
-// tokenSourceFunc adapts a function that returns a token into an
-// [oauth2.TokenSource].
-type tokenSourceFunc func() (*oauth2.Token, error)
-
-// Token returns a new token.
-func (f tokenSourceFunc) Token() (*oauth2.Token, error) {
-	return f()
+// appTokenSource is an [oauth2.TokenSource] that creates application tokens for
+// a GitHub application.
+type appTokenSource struct {
+	ClientID   string
+	PrivateKey *rsa.PrivateKey
 }
 
-func newTokenSource(fn tokenSourceFunc) oauth2.TokenSource {
-	return oauth2.ReuseTokenSourceWithExpiry(
-		nil,
-		fn,
-		tokenExpiryBuffer,
-	)
-}
+// Token returns a new application token.
+func (s *appTokenSource) Token() (*oauth2.Token, error) {
+	expiresAt := time.Now().Add(1 * time.Minute)
 
-func generateToken(
-	tokenID uint64,
-	clientID string,
-	privateKey *rsa.PrivateKey,
-	expiresAt time.Time,
-) (string, error) {
 	token, err := jwt.
 		NewBuilder().
-		JwtID(strconv.FormatUint(tokenID, 10)).
-		Issuer(clientID).
+		Issuer(s.ClientID).
 		IssuedAt(time.Now()).
 		Expiration(expiresAt).
 		Build()
 	if err != nil {
-		return "", fmt.Errorf("unable to generate github application token: %w", err)
+		return nil, fmt.Errorf("unable to generate github application token: %w", err)
 	}
 
 	data, err := jwt.Sign(
 		token,
 		jwt.WithKey(
 			jwa.RS256,
-			privateKey,
+			s.PrivateKey,
 		),
 	)
 	if err != nil {
-		return "", fmt.Errorf("unable to sign github application token: %w", err)
+		return nil, fmt.Errorf("unable to sign github application token: %w", err)
 	}
 
-	return string(data), nil
+	return &oauth2.Token{
+		AccessToken: string(data),
+		Expiry:      expiresAt,
+	}, nil
+}
+
+// installationTokenSource is an [oauth2.TokenSource] that creates installation
+// tokens for a GitHub application.
+type installationTokenSource struct {
+	Client         *AppClient
+	InstallationID int64
+}
+
+// Token returns a new installation token.
+func (s *installationTokenSource) Token() (*oauth2.Token, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+
+	token, _, err := s.Client.REST().Apps.CreateInstallationToken(ctx, s.InstallationID, nil)
+	if err != nil {
+		return nil, fmt.Errorf("unable to create github installation token: %w", err)
+	}
+
+	return &oauth2.Token{
+		AccessToken: token.GetToken(),
+		Expiry:      token.GetExpiresAt().Time,
+	}, nil
 }

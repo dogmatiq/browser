@@ -6,33 +6,14 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"net"
 	"net/http"
 	"strconv"
-	"strings"
 )
-
-var httpClient = &http.Client{
-	Transport: &http.Transport{
-		DialContext: func(_ context.Context, _, host string) (net.Conn, error) {
-			return net.Dial("unix", decodeSocketFromHost(host))
-		},
-	},
-}
-
-func encodeSocketAsHost(socket string) string {
-	return "[" + strings.ReplaceAll(socket, "/", ":") + "]"
-}
-
-func decodeSocketFromHost(host string) string {
-	host, _, _ = net.SplitHostPort(host)
-	return strings.ReplaceAll(host, ":", "/")
-}
 
 // Ask sends a request for credentials to the askpass server.
 func Ask(
 	ctx context.Context,
-	socket string,
+	addr string,
 	repoURL string,
 ) (username, password string, err error) {
 	req := request{
@@ -47,7 +28,7 @@ func Ask(
 	httpReq, err := http.NewRequestWithContext(
 		ctx,
 		http.MethodPost,
-		fmt.Sprintf("http://%s", encodeSocketAsHost(socket)),
+		fmt.Sprintf("http://%s", addr),
 		bytes.NewReader(body),
 	)
 	if err != nil {
@@ -57,7 +38,8 @@ func Ask(
 	httpReq.Header.Set("Content-Type", "application/json")
 	httpReq.Header.Set("Content-Length", strconv.Itoa(len(body)))
 
-	httpRes, err := httpClient.Do(httpReq)
+	// retry:
+	httpRes, err := http.DefaultClient.Do(httpReq)
 	if err != nil {
 		return "", "", fmt.Errorf("unable to send askpass request: %w", err)
 	}

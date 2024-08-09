@@ -10,7 +10,8 @@ func init() {
 		container,
 		func(ctx imbue.Context) ([]minibus.Option, error) {
 			return []minibus.Option{
-				minibus.WithInboxSize(10000),
+				// minibus.WithBusSize(100),
+				minibus.WithInboxSize(100),
 			}, nil
 		},
 	)

@@ -41,11 +41,9 @@ func run() error {
 		return fmt.Errorf("unable to determine executable path: %w", err)
 	}
 
-	socket := bin + ".sock"
-
 	if os.Getenv("GIT_ASKPASS") == bin {
-		return runAskpass(ctx, socket)
+		return runAskpass(ctx)
 	}
 
-	return runServer(ctx, socket)
+	return runServer(ctx)
 }

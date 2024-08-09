@@ -76,7 +76,10 @@ func (h *WebHookHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		h.Logger.DebugContext(
 			ctx,
 			"unable to parse GitHub webhook payload",
-			slog.String("event.type", eventType),
+			slog.Group(
+				"event",
+				slog.String("type", eventType),
+			),
 			slog.String("error", err.Error()),
 		)
 

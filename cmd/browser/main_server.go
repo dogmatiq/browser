@@ -5,7 +5,6 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
-	"os"
 	"time"
 
 	"github.com/dogmatiq/browser/components/askpass"
@@ -13,7 +12,7 @@ import (
 	"github.com/dogmatiq/minibus"
 )
 
-func runServer(ctx context.Context, socket string) error {
+func runServer(ctx context.Context) error {
 	g := container.WaitGroup(ctx)
 
 	imbue.Go1(
@@ -49,8 +48,8 @@ func runServer(ctx context.Context, socket string) error {
 				Handler:           handler,
 				ReadTimeout:       10 * time.Second,
 				ReadHeaderTimeout: 1 * time.Second,
-				WriteTimeout:      10 * time.Second,
-				IdleTimeout:       30 * time.Second,
+				WriteTimeout:      30 * time.Second,
+				IdleTimeout:       60 * time.Second,
 			}
 
 			go shutdownWhenDone(ctx, server)
@@ -59,25 +58,18 @@ func runServer(ctx context.Context, socket string) error {
 		},
 	)
 
-	imbue.Go2(
+	imbue.Go3(
 		g,
 		func(
 			ctx context.Context,
 			handler *askpass.Handler,
+			lis imbue.ByName[askpassListener, net.Listener],
 			logger *slog.Logger,
 		) error {
-			defer os.Remove(socket)
-
-			lis, err := net.Listen("unix", socket)
-			if err != nil {
-				return err
-			}
-			defer lis.Close()
-
 			logger.InfoContext(
 				ctx,
 				"listening for askpass requests",
-				slog.String("address", lis.Addr().String()),
+				slog.String("address", lis.Value().Addr().String()),
 			)
 
 			server := &http.Server{
@@ -93,7 +85,7 @@ func runServer(ctx context.Context, socket string) error {
 
 			go shutdownWhenDone(ctx, server)
 
-			return server.Serve(lis)
+			return server.Serve(lis.Value())
 		},
 	)
 
