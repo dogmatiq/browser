@@ -5,7 +5,7 @@ go 1.23
 toolchain go1.23.1
 
 require (
-	github.com/dogmatiq/configkit v0.15.0
+	github.com/dogmatiq/configkit v0.16.0
 	github.com/dogmatiq/dodeca v1.4.2
 	github.com/dogmatiq/ferrite v1.4.0
 	github.com/dogmatiq/imbue v0.7.1
@@ -26,7 +26,7 @@ require (
 	github.com/cloudwego/base64x v0.1.4 // indirect
 	github.com/cloudwego/iasm v0.2.0 // indirect
 	github.com/dogmatiq/dogma v0.15.0 // indirect
-	github.com/dogmatiq/enginekit v0.16.0 // indirect
+	github.com/dogmatiq/enginekit v0.16.1 // indirect
 	github.com/dogmatiq/iago v0.4.0 // indirect
 	github.com/gabriel-vasile/mimetype v1.4.3 // indirect
 	github.com/gin-contrib/sse v0.1.0 // indirect
