@@ -15,7 +15,7 @@ require (
 	github.com/google/go-github/v38 v38.1.0
 	github.com/jackc/pgx/v4 v4.18.3
 	golang.org/x/mod v0.24.0
-	golang.org/x/oauth2 v0.26.0
+	golang.org/x/oauth2 v0.28.0
 	golang.org/x/tools v0.31.0
 	gopkg.in/square/go-jose.v2 v2.6.0
 )
