@@ -1,7 +1,8 @@
 module github.com/dogmatiq/browser
 
-go 1.23
-toolchain go1.23.1
+go 1.23.0
+
+toolchain go1.23.4
 
 require (
 	github.com/dogmatiq/configkit v0.15.0
