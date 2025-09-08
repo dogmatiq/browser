@@ -1,8 +1,6 @@
 module github.com/dogmatiq/browser
 
-go 1.23.0
-
-toolchain go1.23.4
+go 1.24.0
 
 require (
 	github.com/dogmatiq/configkit v0.15.0
@@ -15,7 +13,7 @@ require (
 	github.com/google/go-github/v38 v38.1.0
 	github.com/jackc/pgx/v4 v4.18.3
 	golang.org/x/mod v0.27.0
-	golang.org/x/oauth2 v0.30.0
+	golang.org/x/oauth2 v0.31.0
 	golang.org/x/tools v0.36.0
 	gopkg.in/square/go-jose.v2 v2.6.0
 )
